@@ -1,0 +1,1610 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A조 CCR 근무 달력</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        :root {
+            --hyundai-blue: #002c5f;
+            --hyundai-light: #00aad2;
+            --hyundai-dark: #001a36;
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --text-primary: #1a1a1a;
+            --text-secondary: #555;
+            --day-shift: #fff9c4;
+            --night-shift: #eceff1;
+            --holiday-bg: #ffebee;
+            --sunday-bg: #ffcdd2;
+            --saturday-bg: #e3f2fd;
+        }
+
+        [data-theme="dark"] {
+            --hyundai-blue: #6fb0d6;
+            --hyundai-light: #92c9e8;
+            --hyundai-dark: #4a8ab8;
+            --bg-primary: #1c2228;
+            --bg-secondary: #252d35;
+            --text-primary: #e4eaf0;
+            --text-secondary: #9aa8b4;
+            --day-shift: #2f3a24;
+            --night-shift: #242c34;
+            --holiday-bg: #362228;
+            --sunday-bg: #3e2830;
+            --saturday-bg: #223040;
+        }
+
+        [data-theme="dark"] .sunday-cell .date-number,
+        [data-theme="dark"] .holiday-cell .date-number {
+            color: #f97583 !important;
+        }
+
+        [data-theme="dark"] .saturday-cell .date-number {
+            color: #79b8ff !important;
+        }
+
+        [data-theme="dark"] .red-memo {
+            color: #f97583 !important;
+        }
+
+        [data-theme="dark"] .ccr-info {
+            background: rgba(255, 255, 255, 0.08) !important;
+        }
+
+        [data-theme="dark"] .ccr-label {
+            color: #92c9e8 !important;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Malgun Gothic', 'Segoe UI', sans-serif;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: var(--bg-primary);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--hyundai-blue), var(--hyundai-dark));
+            color: white;
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logo-icon {
+            width: 50px;
+            height: 50px;
+            background: white;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: #002c5f;
+            font-size: 18px;
+        }
+
+        .title {
+            font-size: 28px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .title:hover {
+            opacity: 0.8;
+        }
+
+        .subtitle {
+            font-size: 12px;
+            opacity: 0.8;
+            margin-top: 4px;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .nav-buttons button {
+            padding: 10px 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            background: transparent;
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .nav-buttons button:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: white;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .action-buttons button {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-settings {
+            background: #00aad2;
+            color: white;
+        }
+
+        .btn-screenshot {
+            background: #4caf50;
+            color: white;
+        }
+
+        .btn-print {
+            background: #ff9800;
+            color: white;
+        }
+
+        .btn-theme {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+
+        .action-buttons button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .calendar-controls {
+            padding: 15px 30px;
+            background: var(--bg-secondary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .shift-legend {
+            display: flex;
+            gap: 20px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-box {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            border: 1px solid rgba(0, 0, 0, 0.2);
+        }
+
+        .legend-day {
+            background: var(--day-shift);
+        }
+
+        .legend-night {
+            background: var(--night-shift);
+        }
+
+        .cteam-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--bg-primary);
+            padding: 8px 15px;
+            border-radius: 8px;
+            border: 2px solid var(--hyundai-light);
+        }
+
+        .cteam-selector label {
+            font-weight: 700;
+            color: var(--hyundai-blue);
+        }
+
+        .cteam-selector select {
+            padding: 6px 12px;
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .calendar-wrapper {
+            padding: 20px;
+            overflow-x: auto;
+        }
+
+        .calendar {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            min-width: 900px;
+        }
+
+        .calendar th {
+            background: var(--hyundai-blue);
+            color: white;
+            padding: 15px 10px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 15px;
+        }
+
+        .calendar th:first-child {
+            background: #c62828;
+            border-radius: 8px 0 0 0;
+        }
+
+        .calendar th:last-child {
+            background: #1565c0;
+            border-radius: 0 8px 0 0;
+        }
+
+        .calendar td {
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            padding: 6px;
+            vertical-align: top;
+            height: 140px;
+            font-size: 12px;
+            position: relative;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .calendar td:hover {
+            box-shadow: inset 0 0 0 2px var(--hyundai-light);
+        }
+
+        .day-shift {
+            background: var(--day-shift) !important;
+        }
+
+        .night-shift {
+            background: var(--night-shift) !important;
+        }
+
+        .sunday-cell {
+            background: var(--sunday-bg) !important;
+        }
+
+        .saturday-cell {
+            background: var(--saturday-bg) !important;
+        }
+
+        .saturday-cell.saturday-work {
+            background: var(--day-shift) !important;
+        }
+
+        .saturday-cell.saturday-work.night-week {
+            background: var(--night-shift) !important;
+        }
+
+        .holiday-cell {
+            background: var(--holiday-bg) !important;
+        }
+
+        .date-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
+            flex-wrap: wrap;
+        }
+
+        .date-number {
+            font-weight: 700;
+            font-size: 24px;
+        }
+
+        .sunday-cell .date-number {
+            color: #c62828;
+        }
+
+        .saturday-cell .date-number {
+            color: #1565c0;
+        }
+
+        .holiday-cell .date-number {
+            color: #c62828;
+        }
+
+        .red-memo {
+            color: #c62828;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .shift-badge {
+            font-size: 12px;
+            padding: 3px 10px;
+            border-radius: 10px;
+            font-weight: 700;
+            margin-left: auto;
+        }
+
+        .shift-badge.day {
+            background: #ffc107;
+            color: #000;
+        }
+
+        .shift-badge.night {
+            background: #607d8b;
+            color: #fff;
+        }
+
+        .sat-work-badge {
+            font-size: 9px;
+            color: #2e7d32;
+            font-weight: 700;
+            margin-left: 4px;
+        }
+
+        .silrer-team {
+            color: #1565c0;
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+
+        .c-team {
+            color: #7b1fa2;
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 3px;
+        }
+
+        .ccr-info {
+            background: rgba(0, 44, 95, 0.1);
+            padding: 6px 10px;
+            border-radius: 6px;
+            margin-top: 4px;
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .ccr-label {
+            color: var(--hyundai-blue);
+            font-weight: 700;
+            margin-right: 4px;
+        }
+
+        .black-memo {
+            color: var(--text-primary);
+            font-size: 15px;
+            font-weight: 700;
+            margin-top: 4px;
+            min-height: 14px;
+        }
+
+        .off-day {
+            text-align: center;
+            color: #c62828;
+            font-weight: 700;
+            font-size: 20px;
+            margin-top: 15px;
+        }
+
+        .bottom-memo {
+            padding: 20px 30px;
+            border-top: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .bottom-memo textarea {
+            width: 100%;
+            height: 80px;
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 14px;
+            resize: vertical;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .bottom-memo textarea:focus {
+            outline: none;
+            border-color: var(--hyundai-light);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            overflow-y: auto;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal.active {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 30px;
+        }
+
+        .modal-content {
+            background: var(--bg-primary);
+            border-radius: 16px;
+            max-width: 900px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            background: linear-gradient(135deg, #002c5f, #001a36);
+            color: white;
+            padding: 20px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            border-radius: 16px 16px 0 0;
+        }
+
+        .modal-header h2 {
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .close-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 20px;
+            transition: all 0.2s;
+        }
+
+        .close-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .modal-body {
+            padding: 25px;
+        }
+
+        .settings-section {
+            margin-bottom: 20px;
+            padding: 20px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+        }
+
+        .settings-section h3 {
+            margin-bottom: 15px;
+            color: var(--hyundai-blue);
+            font-size: 16px;
+        }
+
+        .settings-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .settings-row label {
+            min-width: 140px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .settings-row input,
+        .settings-row select {
+            padding: 10px 14px;
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            font-size: 14px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .team-members {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .team-member {
+            background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+            color: #1a1a1a;
+        }
+
+        .team-member .remove-btn {
+            background: #ef5350;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .add-member {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .add-member input {
+            flex: 1;
+            padding: 10px 14px;
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .add-member button {
+            padding: 10px 20px;
+            background: #002c5f;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .ccr-start-setting {
+            background: var(--bg-primary);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .ccr-day-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .ccr-day-row span {
+            min-width: 60px;
+            font-weight: 600;
+        }
+
+        .ccr-day-row select {
+            padding: 8px 12px;
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .c-team-inputs {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        .c-team-card {
+            background: var(--bg-primary);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .c-team-card h4 {
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: var(--hyundai-blue);
+            text-align: center;
+        }
+
+        .c-team-card input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            margin-bottom: 8px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+
+        .silrer-setting {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .silrer-setting select {
+            padding: 10px 14px;
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .save-btn {
+            background: linear-gradient(135deg, #002c5f, #001a36);
+            color: white;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 700;
+            width: 100%;
+            margin-top: 15px;
+            transition: all 0.2s;
+        }
+
+        .save-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 44, 95, 0.3);
+        }
+
+        .backup-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 15px;
+        }
+
+        .backup-buttons button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .export-btn {
+            background: #2196f3;
+            color: white;
+        }
+
+        .import-btn {
+            background: #ff9800;
+            color: white;
+        }
+
+        .year-overview {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        .mini-month {
+            background: var(--bg-secondary);
+            padding: 15px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+
+        .mini-month:hover {
+            transform: translateY(-4px);
+            border-color: var(--hyundai-light);
+        }
+
+        .mini-month h4 {
+            text-align: center;
+            margin-bottom: 10px;
+            color: var(--hyundai-blue);
+            font-weight: 700;
+        }
+
+        .mini-calendar {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 2px;
+            font-size: 10px;
+            text-align: center;
+        }
+
+        .mini-calendar .mheader {
+            background: #002c5f;
+            color: white;
+            padding: 3px;
+            font-weight: 600;
+            border-radius: 2px;
+        }
+
+        .mini-calendar .mday {
+            padding: 3px;
+            border-radius: 2px;
+        }
+
+        .mini-calendar .msunday {
+            color: #c62828;
+            font-weight: 600;
+        }
+
+        .mini-calendar .msaturday {
+            color: #1565c0;
+        }
+
+        .toggle-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .toggle-btn.off {
+            background: #ffcdd2;
+            color: #c62828;
+        }
+
+        .toggle-btn.on {
+            background: #c8e6c9;
+            color: #2e7d32;
+        }
+
+        /* 인쇄용 헤더 (평소에는 숨김) */
+        .print-header {
+            display: none;
+        }
+
+        @media print {
+            @page {
+                size: A4 landscape;
+                margin: 8mm;
+            }
+
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
+            }
+
+            body {
+                background: white !important;
+                margin: 0;
+                padding: 0;
+                font-size: 11px;
+            }
+
+            .header,
+            .action-buttons,
+            .cteam-selector,
+            .shift-legend,
+            .calendar-controls,
+            .btn-theme {
+                display: none !important;
+            }
+
+            /* 하단 메모는 표시 */
+            .bottom-memo {
+                display: block !important;
+                margin-top: 10px;
+                padding: 10px;
+                border: 1px solid #ccc;
+            }
+
+            .bottom-memo textarea {
+                width: 100%;
+                min-height: 50px;
+                border: none;
+                background: transparent;
+                font-size: 12px;
+            }
+
+            .print-header {
+                display: block !important;
+                text-align: center;
+                margin-bottom: 8px;
+                padding: 8px;
+                border-bottom: 2px solid #002c5f;
+            }
+
+            .print-header .print-title {
+                font-size: 22px;
+                font-weight: 700;
+                color: #002c5f;
+            }
+
+            .print-header .print-cteam {
+                font-size: 14px;
+                color: #7b1fa2;
+                margin-top: 4px;
+            }
+
+            .container {
+                box-shadow: none !important;
+                max-width: 100% !important;
+                width: 100% !important;
+            }
+
+            .calendar-wrapper {
+                overflow: visible !important;
+            }
+
+            .calendar {
+                width: 100% !important;
+                table-layout: fixed;
+            }
+
+            /* 날짜칸 높이 고정 */
+            .calendar td {
+                height: 85px !important;
+                min-height: 85px !important;
+                max-height: 85px !important;
+                padding: 4px !important;
+                font-size: inherit;
+                page-break-inside: avoid;
+                overflow: hidden;
+                vertical-align: top;
+            }
+
+            .calendar th {
+                padding: 6px !important;
+                font-size: 12px;
+            }
+
+            .date-number {
+                font-size: 16px !important;
+            }
+
+            .ccr-info {
+                font-size: 12px !important;
+                padding: 2px 4px !important;
+                margin-top: 2px !important;
+            }
+
+            .c-team {
+                font-size: 10px !important;
+                margin-bottom: 1px !important;
+            }
+
+            .red-memo {
+                font-size: 10px !important;
+            }
+
+            .black-memo {
+                font-size: 9px !important;
+            }
+
+            .off-day {
+                font-size: 14px !important;
+                margin-top: 10px !important;
+            }
+
+            .silrer-team {
+                font-size: 9px !important;
+            }
+
+            .date-header {
+                margin-bottom: 2px !important;
+            }
+
+            .shift-badge {
+                font-size: 9px !important;
+                padding: 1px 4px !important;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .calendar td {
+                height: 120px;
+                font-size: 10px;
+            }
+
+            .year-overview {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .c-team-inputs {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container" id="printArea">
+        <div class="header">
+            <div class="logo">
+                <div class="logo-icon">HMC</div>
+                <div>
+                    <div class="title" onclick="showYearOverview()"><span id="yearMonth">2026년 1월</span> A조</div>
+                    <div class="subtitle">CCR 근무 스케줄 관리 시스템</div>
+                </div>
+            </div>
+            <div class="nav-buttons">
+                <button onclick="changeMonth(-1)">◀ 이전</button>
+                <button onclick="goToToday()">오늘</button>
+                <button onclick="changeMonth(1)">다음 ▶</button>
+            </div>
+            <div class="action-buttons">
+                <button class="btn-settings" onclick="showSettings()">⚙️ 설정</button>
+                <button class="btn-screenshot" onclick="takeScreenshot()">📷 캡처</button>
+                <button class="btn-print" onclick="printCalendar()">🖨️ 인쇄</button>
+                <button class="btn-theme" onclick="toggleTheme()">🌓</button>
+            </div>
+        </div>
+
+        <div class="calendar-controls">
+            <div class="shift-legend">
+                <div class="legend-item">
+                    <div class="legend-box legend-day"></div><span>주간</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box legend-night"></div><span>야간</span>
+                </div>
+            </div>
+            <div class="cteam-selector">
+                <label>🌙 C조 팀:</label>
+                <select id="cteamSelect" onchange="changeCTeam()">
+                    <option value="">선택</option>
+                    <option value="A">A팀</option>
+                    <option value="B">B팀</option>
+                    <option value="C">C팀</option>
+                    <option value="D">D팀</option>
+                    <option value="E">E팀</option>
+                </select>
+                <span id="cteamMembers" style="font-size:12px;color:var(--text-secondary)"></span>
+            </div>
+        </div>
+
+        <div class="print-header" id="printHeader">
+            <div class="print-title" id="printTitle">2026년 1월 A조</div>
+            <div class="print-cteam" id="printCteam"></div>
+        </div>
+
+        <div class="calendar-wrapper">
+            <table class="calendar" id="calendar">
+                <thead>
+                    <tr>
+                        <th>일</th>
+                        <th>월</th>
+                        <th>화</th>
+                        <th>수</th>
+                        <th>목</th>
+                        <th>금</th>
+                        <th>토</th>
+                    </tr>
+                </thead>
+                <tbody id="calendarBody"></tbody>
+            </table>
+        </div>
+
+        <div class="bottom-memo">
+            <textarea id="bottomMemo" placeholder="메모를 입력하세요..." onchange="saveBottomMemo()"></textarea>
+        </div>
+    </div>
+
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>⚙️ 설정</h2><button class="close-btn" onclick="closeSettings()">&times;</button>
+            </div>
+            <div class="modal-body" id="settingsContent"></div>
+        </div>
+    </div>
+    <div class="modal" id="yearModal">
+        <div class="modal-content" style="max-width:1000px">
+            <div class="modal-header">
+                <h2 id="yearModalTitle">2026년</h2><button class="close-btn" onclick="closeYearModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="year-overview" id="yearOverview"></div>
+            </div>
+        </div>
+    </div>
+    <div class="modal" id="dateModal">
+        <div class="modal-content" style="max-width:500px">
+            <div class="modal-header">
+                <h2 id="dateModalTitle">날짜 상세</h2><button class="close-btn" onclick="closeDateModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="dateDetail"></div>
+        </div>
+    </div>
+
+    <script>
+        const DEFAULT_SETTINGS = {
+            dayShiftStart: '2026-01-05', nightShiftStart: '2026-01-12',
+            silrerReferenceDate: '2026-01-05', silrerStartTeam: '주설비',
+            materialHandler: '',
+            teams: { conveyor: ['호빈', '민성', '동인', '선우', '윤수'], robot: ['광수', '영빈', '서용', '찬우', '성광'], mainEquip: ['우용', '재령', '민혁', '이진', '성운', '승현'] },
+            cTeams: { A: ['호빈', '영빈', '민혁'], B: ['민성', '광수', '재령'], C: ['동인', '서용', '이진'], D: ['선우', '찬우', '성운'], E: ['윤수', '성광', '승현'] },
+            cTeamByMonth: { '2026-01': 'A' },
+            ccrStartWorkers: { day: { day1am: '윤수', day1pm: '성광', day2am: '성광', day2pm: '재령' }, night: { day1am: '', day1pm: '', day2am: '', day2pm: '' } }
+        };
+
+        let settings = JSON.parse(localStorage.getItem('ccrSettings4')) || JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+        let calendarData = JSON.parse(localStorage.getItem('ccrCalendarData4')) || {};
+        let currentYear = 2026, currentMonth = 1;
+
+        const HOLIDAYS = {
+            2025: { '01-01': '신정', '03-01': '삼일절', '05-05': '어린이날', '06-06': '현충일', '08-15': '광복절', '10-03': '개천절', '10-09': '한글날', '12-25': '크리스마스', '01-28': '설날연휴', '01-29': '설날', '01-30': '설날연휴', '10-05': '추석연휴', '10-06': '추석', '10-07': '추석연휴' },
+            2026: { '01-01': '신정', '01-02': '신정연휴', '01-03': '신정연휴', '03-01': '삼일절', '05-05': '어린이날', '06-06': '현충일', '08-15': '광복절', '10-03': '개천절', '10-09': '한글날', '12-25': '크리스마스', '02-16': '설날연휴', '02-17': '설날', '02-18': '설날연휴', '05-24': '석가탄신일', '09-24': '추석연휴', '09-25': '추석', '09-26': '추석연휴' },
+            2027: { '01-01': '신정', '03-01': '삼일절', '05-05': '어린이날', '06-06': '현충일', '08-15': '광복절', '10-03': '개천절', '10-09': '한글날', '12-25': '크리스마스', '02-05': '설날연휴', '02-06': '설날', '02-07': '설날연휴', '05-13': '석가탄신일', '10-13': '추석연휴', '10-14': '추석', '10-15': '추석연휴' },
+            2028: { '01-01': '신정', '03-01': '삼일절', '05-05': '어린이날', '06-06': '현충일', '08-15': '광복절', '10-03': '개천절', '10-09': '한글날', '12-25': '크리스마스' },
+            2029: { '01-01': '신정', '03-01': '삼일절', '05-05': '어린이날', '06-06': '현충일', '08-15': '광복절', '10-03': '개천절', '10-09': '한글날', '12-25': '크리스마스' },
+            2030: { '01-01': '신정', '03-01': '삼일절', '05-05': '어린이날', '06-06': '현충일', '08-15': '광복절', '10-03': '개천절', '10-09': '한글날', '12-25': '크리스마스' }
+        };
+
+        function getHoliday(y, m, d) { const k = `${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; return HOLIDAYS[y]?.[k] || null; }
+        function formatDate(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+        function getDaysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
+        function getFirstDayOfMonth(y, m) { return new Date(y, m - 1, 1).getDay(); }
+
+        // 날짜 문자열을 로컬 날짜로 파싱 (시간대 문제 방지)
+        function parseLocalDate(dateStr) {
+            if (!dateStr) return new Date();
+            const [y, m, d] = dateStr.split('-').map(Number);
+            return new Date(y, m - 1, d);
+        }
+
+        function getShiftType(date) {
+            const dayStart = parseLocalDate(settings.dayShiftStart);
+            const getMonday = (d) => {
+                const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                const day = dt.getDay();
+                const diff = dt.getDate() - day + (day === 0 ? -6 : 1);
+                return new Date(dt.setDate(diff));
+            };
+            const dayStartMonday = getMonday(dayStart);
+            const dateMonday = getMonday(date);
+            const diffWeeks = Math.round((dateMonday - dayStartMonday) / (7 * 24 * 60 * 60 * 1000));
+            return diffWeeks % 2 === 0 ? 'day' : 'night';
+        }
+
+        function getCTeamMembers(year, month) {
+            const k = `${year}-${String(month).padStart(2, '0')}`;
+            const teamKey = settings.cTeamByMonth[k] || '';
+            return teamKey ? (settings.cTeams[teamKey] || []) : [];
+        }
+
+        function getCCRWorkers(date, shiftType) {
+            const dateStr = formatDate(date);
+            const dayData = calendarData[dateStr];
+            const override = dayData?.ccrOverride;
+
+            // 완전히 둘 다 지정된 경우 바로 반환
+            if (override?.am && override?.pm) return override;
+
+            const startWorkers = settings.ccrStartWorkers?.[shiftType] || {};
+            const cTeamMembers = getCTeamMembers(date.getFullYear(), date.getMonth() + 1);
+
+            // 팀별 근무자 목록 (C조 제외 등 필터링 적용)
+            const getWorkers = (team) => {
+                let w = [...settings.teams[team]];
+                if (shiftType === 'day' && settings.materialHandler) w = w.filter(x => x !== settings.materialHandler);
+                if (shiftType === 'night') w = w.filter(x => !cTeamMembers.includes(x));
+                return w;
+            };
+
+            // 근무자가 어느 팀인지 찾기
+            const findTeam = (worker) => {
+                const teams = ['conveyor', 'robot', 'mainEquip'];
+                for (const team of teams) {
+                    if (getWorkers(team).includes(worker)) return team;
+                }
+                return null;
+            };
+
+            // 팀 페어링: AM팀 -> PM팀
+            // 컨베어 -> 로보트, 로보트 -> 주설비, 주설비 -> 컨베어
+            const getNextTeam = (amTeam) => {
+                const pairMap = { conveyor: 'robot', robot: 'mainEquip', mainEquip: 'conveyor' };
+                return pairMap[amTeam] || 'conveyor';
+            };
+
+            // 각 팀별 독립 인덱스
+            const teamIndices = { conveyor: 0, robot: 0, mainEquip: 0 };
+
+            // 시뮬레이션 시작
+            let lastPm = null;
+            let lastPmTeam = null;
+            let dayNum = 0;
+            const tempDate = parseLocalDate(shiftType === 'day' ? settings.dayShiftStart : settings.nightShiftStart);
+
+            while (tempDate <= date) {
+                const h = getHoliday(tempDate.getFullYear(), tempDate.getMonth() + 1, tempDate.getDate());
+                const dow = tempDate.getDay();
+                const tStr = formatDate(tempDate);
+                const tData = calendarData[tStr];
+                const shType = getShiftType(tempDate);
+
+                // 해당 shift 타입의 근무일이 아니면 스킵
+                if (shType !== shiftType || dow === 0 || h || (dow === 6 && !tData?.saturdayWork)) {
+                    tempDate.setDate(tempDate.getDate() + 1);
+                    continue;
+                }
+
+                const isTargetDate = formatDate(tempDate) === dateStr;
+
+                let am, pm, amTeam, pmTeam;
+
+                if (dayNum === 0) {
+                    // 1일차: 설정에서 지정
+                    am = startWorkers.day1am || '-';
+                    pm = startWorkers.day1pm || '-';
+                    amTeam = findTeam(am);
+                    pmTeam = findTeam(pm);
+                    // AM 팀 인덱스 업데이트 (해당 근무자 다음 순번으로)
+                    if (amTeam) {
+                        const amWorkers = getWorkers(amTeam);
+                        const amIdx = amWorkers.indexOf(am);
+                        if (amIdx >= 0 && teamIndices[amTeam] <= amIdx) {
+                            teamIndices[amTeam] = amIdx + 1;
+                        }
+                    }
+                    // PM 팀 인덱스 업데이트
+                    if (pmTeam) {
+                        const pmWorkers = getWorkers(pmTeam);
+                        const pmIdx = pmWorkers.indexOf(pm);
+                        if (pmIdx >= 0 && teamIndices[pmTeam] <= pmIdx) {
+                            teamIndices[pmTeam] = pmIdx + 1;
+                        }
+                    }
+                } else if (dayNum === 1) {
+                    // 2일차: 설정에서 지정
+                    am = startWorkers.day2am || '-';
+                    pm = startWorkers.day2pm || '-';
+                    amTeam = findTeam(am);
+                    pmTeam = findTeam(pm);
+                    // AM 팀 인덱스 업데이트
+                    if (amTeam) {
+                        const amWorkers = getWorkers(amTeam);
+                        const amIdx = amWorkers.indexOf(am);
+                        if (amIdx >= 0 && teamIndices[amTeam] <= amIdx) {
+                            teamIndices[amTeam] = amIdx + 1;
+                        }
+                    }
+                    // PM 팀 인덱스 업데이트
+                    if (pmTeam) {
+                        const pmWorkers = getWorkers(pmTeam);
+                        const pmIdx = pmWorkers.indexOf(pm);
+                        if (pmIdx >= 0 && teamIndices[pmTeam] <= pmIdx) {
+                            teamIndices[pmTeam] = pmIdx + 1;
+                        }
+                    }
+                } else {
+                    // 3일차부터: 전날 PM -> 오늘 AM, PM은 AM팀의 페어 팀에서
+                    am = lastPm;
+                    amTeam = lastPmTeam;
+
+                    // AM 팀에 따라 PM 팀 결정
+                    pmTeam = getNextTeam(amTeam);
+                    const pmWorkers = getWorkers(pmTeam);
+
+                    if (pmWorkers.length > 0) {
+                        pm = pmWorkers[teamIndices[pmTeam] % pmWorkers.length];
+                        teamIndices[pmTeam]++;
+                    } else {
+                        pm = '-';
+                    }
+                }
+
+                if (isTargetDate) {
+                    // 부분 override 적용: 지정된 것만 덮어쓰기
+                    const finalAm = override?.am || am;
+                    const finalPm = override?.pm || pm;
+                    return { am: finalAm, pm: finalPm };
+                }
+
+                lastPm = pm;
+                lastPmTeam = findTeam(pm);
+                dayNum++;
+                tempDate.setDate(tempDate.getDate() + 1);
+            }
+
+            return { am: '-', pm: '-' };
+        }
+
+        function getSilrerTeam(date) {
+            const [y, m, d] = settings.silrerReferenceDate.split('-').map(Number);
+            const ref = new Date(y, m - 1, d);
+            const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+            const diff = Math.round((localDate - ref) / 86400000);
+            const period = Math.floor(diff / 14);
+            const teams = ['컨베어', '로보트', '주설비'];
+            const startIdx = teams.indexOf(settings.silrerStartTeam || '주설비');
+            return teams[((period + startIdx) % 3 + 3) % 3];
+        }
+
+        function renderCalendar() {
+            const tbody = document.getElementById('calendarBody');
+            document.getElementById('yearMonth').textContent = `${currentYear}년 ${currentMonth}월`;
+
+            // Update C-team selector
+            const mk = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+            const cTeamKey = settings.cTeamByMonth[mk] || '';
+            document.getElementById('cteamSelect').value = cTeamKey;
+            const cMembers = cTeamKey ? (settings.cTeams[cTeamKey] || []).join(', ') : '';
+            document.getElementById('cteamMembers').textContent = cMembers ? `(${cMembers})` : '';
+
+            const days = getDaysInMonth(currentYear, currentMonth);
+            const first = getFirstDayOfMonth(currentYear, currentMonth);
+            let html = '';
+
+            for (let week = 0; week < 6; week++) {
+                if (week * 7 - first + 1 > days) break;
+                html += '<tr>';
+                for (let dow = 0; dow < 7; dow++) {
+                    const cellDay = week * 7 + dow - first + 1;
+                    if (cellDay < 1 || cellDay > days) { html += '<td></td>'; continue; }
+
+                    const date = new Date(currentYear, currentMonth - 1, cellDay);
+                    const dateStr = formatDate(date);
+                    const dayData = calendarData[dateStr] || {};
+                    const holiday = getHoliday(currentYear, currentMonth, cellDay) || dayData.isHoliday;
+                    const isSun = dow === 0, isSat = dow === 6;
+                    const shiftType = getShiftType(date);
+                    const satWork = isSat && dayData.saturdayWork;
+                    const isOff = holiday || isSun || (isSat && !satWork);
+
+                    let cls = shiftType === 'day' ? 'day-shift' : 'night-shift';
+                    if (isSun) cls = 'sunday-cell';
+                    else if (holiday) cls = 'holiday-cell';
+                    else if (isSat && !satWork) cls = 'saturday-cell';
+                    else if (satWork) cls = `saturday-cell saturday-work ${shiftType === 'night' ? 'night-week' : ''}`;
+
+                    html += `<td class="${cls}" onclick="showDateDetail('${dateStr}')">`;
+
+                    // Date header with number and red memo next to it
+                    html += `<div class="date-header">`;
+                    html += `<span class="date-number">${cellDay}</span>`;
+                    const redMemoText = dayData.redMemo || (holiday || '');
+                    if (redMemoText) html += `<span class="red-memo">${redMemoText}</span>`;
+                    if (satWork) html += `<span class="sat-work-badge">생산특근</span>`;
+                    else if (!isOff) html += `<span class="shift-badge ${shiftType}">${shiftType === 'day' ? '주' : '야'}</span>`;
+                    html += '</div>';
+
+                    // 내판실러 안착불량 팀 (월요일, 2주 시작)
+                    if (dow === 1) {
+                        const [y, m, d] = settings.silrerReferenceDate.split('-').map(Number);
+                        const ref = new Date(y, m - 1, d);
+                        const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                        const diff = Math.round((localDate - ref) / 86400000);
+                        if (diff >= 0 && diff % 14 === 0) html += `<div class="silrer-team">${getSilrerTeam(date)}</div>`;
+                    }
+
+                    if (isOff) {
+                        if (!holiday && !isSun) html += '<div class="off-day">OFF</div>';
+                        // 야간주 시작 일요일에 C조 표시 (다음 월요일이 야간주 첫날인 경우)
+                        if (isSun) {
+                            const nextMonday = new Date(date);
+                            nextMonday.setDate(nextMonday.getDate() + 1);
+                            const nextMondayShiftType = getShiftType(nextMonday);
+                            if (nextMondayShiftType === 'night') {
+                                const cMembers = getCTeamMembers(currentYear, currentMonth);
+                                if (cMembers.length) html += `<div class="c-team">C조 ${cMembers.join(' ')}</div>`;
+                            }
+                        }
+                    } else {
+                        const ccr = getCCRWorkers(date, shiftType);
+                        if (shiftType === 'night') {
+                            const cMembers = getCTeamMembers(currentYear, currentMonth);
+                            if (cMembers.length) html += `<div class="c-team">C조 ${cMembers.join(' ')}</div>`;
+                        }
+                        html += `<div class="ccr-info"><span class="ccr-label">CCR</span>${ccr.am} ${ccr.pm}</div>`;
+                    }
+                    html += `<div class="black-memo">${dayData.blackMemo || ''}</div></td>`;
+                }
+                html += '</tr>';
+            }
+            tbody.innerHTML = html;
+            document.getElementById('bottomMemo').value = calendarData[`memo-${currentYear}-${currentMonth}`] || '';
+        }
+
+        function changeCTeam() {
+            const val = document.getElementById('cteamSelect').value;
+            const mk = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+            if (val) settings.cTeamByMonth[mk] = val;
+            else delete settings.cTeamByMonth[mk];
+            saveSettings4();
+            renderCalendar();
+        }
+
+        function changeMonth(d) { currentMonth += d; if (currentMonth > 12) { currentMonth = 1; currentYear++; } if (currentMonth < 1) { currentMonth = 12; currentYear--; } renderCalendar(); }
+        function goToToday() { const t = new Date(); currentYear = t.getFullYear(); currentMonth = t.getMonth() + 1; renderCalendar(); }
+        function saveBottomMemo() { calendarData[`memo-${currentYear}-${currentMonth}`] = document.getElementById('bottomMemo').value; saveData(); }
+        function saveData() { localStorage.setItem('ccrCalendarData4', JSON.stringify(calendarData)); }
+        function saveSettings4() { localStorage.setItem('ccrSettings4', JSON.stringify(settings)); }
+
+        function toggleTheme() { document.body.dataset.theme = document.body.dataset.theme === 'dark' ? '' : 'dark'; localStorage.setItem('theme', document.body.dataset.theme); }
+        function takeScreenshot() {
+            html2canvas(document.getElementById('printArea'), { backgroundColor: document.body.dataset.theme === 'dark' ? '#1c2228' : '#fff', scale: 2 }).then(c => {
+                c.toBlob(blob => {
+                    const fileName = `${currentYear}년 ${currentMonth}월.png`;
+                    const l = document.createElement('a');
+                    l.download = fileName;
+                    l.href = URL.createObjectURL(blob);
+                    document.body.appendChild(l);
+                    l.click();
+                    document.body.removeChild(l);
+                    URL.revokeObjectURL(l.href);
+                    alert(`📷 "${fileName}" 캡처 완료!\n\n다운로드 폴더를 확인하세요.\n(바탕화면에 저장하려면 브라우저 설정에서\n다운로드 위치를 바탕화면으로 변경하세요)`);
+                }, 'image/png');
+            });
+        }
+        function printCalendar() {
+            // 인쇄용 헤더 업데이트
+            document.getElementById('printTitle').textContent = `${currentYear}년 ${currentMonth}월 A조`;
+            const cTeamKey = settings.cTeamByMonth[`${currentYear}-${String(currentMonth).padStart(2, '0')}`];
+            const cMembers = cTeamKey ? (settings.cTeams[cTeamKey] || []) : [];
+            if (cMembers.length > 0) {
+                document.getElementById('printCteam').textContent = `C조: ${cMembers.join(' ')}`;
+            } else {
+                document.getElementById('printCteam').textContent = '';
+            }
+            window.print();
+        }
+
+        function getAllWorkers() { return [...settings.teams.conveyor, ...settings.teams.robot, ...settings.teams.mainEquip]; }
+
+        function showDateDetail(ds) {
+            const d = new Date(ds), data = calendarData[ds] || {};
+            const isSat = d.getDay() === 6;
+            const holiday = getHoliday(d.getFullYear(), d.getMonth() + 1, d.getDate());
+
+            let satToggleHtml = '';
+            if (isSat && !holiday) {
+                const satWork = data.saturdayWork || false;
+                satToggleHtml = `<div class="settings-section"><h3>🏭 토요일 생산특근</h3>
+                <button class="toggle-btn ${satWork ? 'on' : 'off'}" id="satToggle" onclick="toggleSatWork('${ds}')">${satWork ? '✅ 생산특근 ON' : '❌ 생산특근 OFF'}</button>
+            </div>`;
+            }
+
+            // 휴일 설정 토글 (평일에만 표시 - 월~금)
+            let holidayToggleHtml = '';
+            const dow = d.getDay();
+            if (dow >= 1 && dow <= 5) {
+                const isCustomHoliday = data.isHoliday || false;
+                holidayToggleHtml = `<div class="settings-section"><h3>🗓️ 휴일 설정</h3>
+                <button class="toggle-btn ${isCustomHoliday ? 'on' : 'off'}" onclick="toggleHoliday('${ds}')">${isCustomHoliday ? '✅ 휴일 (빨간날)' : '❌ 일반 근무일'}</button>
+            </div>`;
+            }
+
+            document.getElementById('dateModalTitle').textContent = `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
+            document.getElementById('dateDetail').innerHTML = `
+            ${satToggleHtml}
+            ${holidayToggleHtml}
+            <div class="settings-section"><h3>📝 메모</h3>
+                <div class="settings-row"><label>빨간색 메모</label><input type="text" id="dRedMemo" value="${data.redMemo || ''}" style="flex:1;color:#c62828" onkeypress="if(event.key==='Enter')saveDateDetail('${ds}')"></div>
+                <div class="settings-row"><label>검정색 메모</label><input type="text" id="dBlackMemo" value="${data.blackMemo || ''}" style="flex:1" onkeypress="if(event.key==='Enter')saveDateDetail('${ds}')"></div>
+            </div>
+            <div class="settings-section"><h3>👷 CCR 근무자 수정</h3>
+                <div class="settings-row"><label>초반</label><select id="dCcrAm" onkeydown="if(event.key==='Enter')saveDateDetail('${ds}')"><option value="">자동</option>${getAllWorkers().map(w => `<option value="${w}" ${data.ccrOverride?.am === w ? 'selected' : ''}>${w}</option>`).join('')}</select></div>
+                <div class="settings-row"><label>후반</label><select id="dCcrPm" onkeydown="if(event.key==='Enter')saveDateDetail('${ds}')"><option value="">자동</option>${getAllWorkers().map(w => `<option value="${w}" ${data.ccrOverride?.pm === w ? 'selected' : ''}>${w}</option>`).join('')}</select></div>
+            </div>
+            <button class="save-btn" onclick="saveDateDetail('${ds}')">저장</button>`;
+            document.getElementById('dateModal').classList.add('active');
+        }
+
+        function toggleSatWork(ds) {
+            if (!calendarData[ds]) calendarData[ds] = {};
+            calendarData[ds].saturdayWork = !calendarData[ds].saturdayWork;
+            saveData();
+            showDateDetail(ds);
+            renderCalendar();
+        }
+
+        function toggleHoliday(ds) {
+            if (!calendarData[ds]) calendarData[ds] = {};
+            calendarData[ds].isHoliday = !calendarData[ds].isHoliday;
+            saveData();
+            showDateDetail(ds);
+            renderCalendar();
+        }
+
+        function saveDateDetail(ds) {
+            if (!calendarData[ds]) calendarData[ds] = {};
+            calendarData[ds].redMemo = document.getElementById('dRedMemo').value;
+            calendarData[ds].blackMemo = document.getElementById('dBlackMemo').value;
+            const am = document.getElementById('dCcrAm').value, pm = document.getElementById('dCcrPm').value;
+            if (am || pm) calendarData[ds].ccrOverride = { am, pm }; else delete calendarData[ds].ccrOverride;
+            saveData(); closeDateModal(); renderCalendar();
+        }
+        function closeDateModal() { document.getElementById('dateModal').classList.remove('active'); }
+
+        function showSettings() {
+            const sw = settings.ccrStartWorkers || { day: {}, night: {} };
+            const workers = getAllWorkers();
+            const wOpts = (sel) => workers.map(w => `<option value="${w}" ${sel === w ? 'selected' : ''}>${w}</option>`).join('');
+
+            let cTeamHtml = '';
+            ['A', 'B', 'C', 'D', 'E'].forEach(t => {
+                const members = settings.cTeams[t] || ['', '', ''];
+                cTeamHtml += `<div class="c-team-card"><h4>${t}팀</h4>
+                <input id="ct-${t}-0" value="${members[0] || ''}" placeholder="이름 1">
+                <input id="ct-${t}-1" value="${members[1] || ''}" placeholder="이름 2">
+                <input id="ct-${t}-2" value="${members[2] || ''}" placeholder="이름 3">
+            </div>`;
+            });
+
+            document.getElementById('settingsContent').innerHTML = `
+            <div class="settings-section"><h3>📅 기준일 설정</h3>
+                <div class="settings-row"><label>주간 시작일</label><input type="date" id="sDayStart" value="${settings.dayShiftStart}"></div>
+                <div class="settings-row"><label>야간 시작일</label><input type="date" id="sNightStart" value="${settings.nightShiftStart}"></div>
+            </div>
+            <div class="settings-section"><h3>🔧 주간 시작 CCR 지정 (첫 2일)</h3>
+                <div class="ccr-start-setting">
+                    <div class="ccr-day-row"><span>1일차</span>초반<select id="swDayAm1"><option value="">선택</option>${wOpts(sw.day?.day1am)}</select> 후반<select id="swDayPm1"><option value="">선택</option>${wOpts(sw.day?.day1pm)}</select></div>
+                    <div class="ccr-day-row"><span>2일차</span>초반<select id="swDayAm2"><option value="">선택</option>${wOpts(sw.day?.day2am)}</select> 후반<select id="swDayPm2"><option value="">선택</option>${wOpts(sw.day?.day2pm)}</select></div>
+                </div>
+            </div>
+            <div class="settings-section"><h3>🌙 야간 시작 CCR 지정 (첫 2일)</h3>
+                <div class="ccr-start-setting">
+                    <div class="ccr-day-row"><span>1일차</span>초반<select id="swNightAm1"><option value="">선택</option>${wOpts(sw.night?.day1am)}</select> 후반<select id="swNightPm1"><option value="">선택</option>${wOpts(sw.night?.day1pm)}</select></div>
+                    <div class="ccr-day-row"><span>2일차</span>초반<select id="swNightAm2"><option value="">선택</option>${wOpts(sw.night?.day2am)}</select> 후반<select id="swNightPm2"><option value="">선택</option>${wOpts(sw.night?.day2pm)}</select></div>
+                </div>
+            </div>
+            <div class="settings-section"><h3>👤 자재담당자 (주간 CCR 제외)</h3>
+                <div class="settings-row"><label>담당자</label><select id="sMaterial"><option value="">없음</option>${wOpts(settings.materialHandler)}</select></div>
+            </div>
+            <div class="settings-section"><h3>👥 팀별 근무자</h3>
+                ${renderTeamEdit('conveyor', '컨베어')}${renderTeamEdit('robot', '로보트')}${renderTeamEdit('mainEquip', '주설비')}
+            </div>
+            <div class="settings-section"><h3>🌙 C조 팀 구성 (A~E팀)</h3>
+                <p style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">각 팀당 3명 (컨베어, 로보트, 주설비 순)</p>
+                <div class="c-team-inputs">${cTeamHtml}</div>
+            </div>
+            <div class="settings-section"><h3>🔧 내판실러 안착불량</h3>
+                <div class="silrer-setting">
+                    <label>기준일:</label><input type="date" id="sSilrer" value="${settings.silrerReferenceDate}">
+                    <label>기준팀:</label>
+                    <select id="sSilrerTeam">
+                        <option value="컨베어" ${settings.silrerStartTeam === '컨베어' ? 'selected' : ''}>컨베어</option>
+                        <option value="로보트" ${settings.silrerStartTeam === '로보트' ? 'selected' : ''}>로보트</option>
+                        <option value="주설비" ${settings.silrerStartTeam === '주설비' ? 'selected' : ''}>주설비</option>
+                    </select>
+                    <span style="font-size:12px;color:var(--text-secondary)">(2주마다 순환)</span>
+                </div>
+            </div>
+            <div class="settings-section"><h3>💾 데이터 관리</h3>
+                <div class="backup-buttons"><button class="export-btn" onclick="exportData()">📤 내보내기</button><button class="import-btn" onclick="document.getElementById('importFile').click()">📥 가져오기</button></div>
+                <input type="file" id="importFile" hidden accept=".json" onchange="importData(event)">
+            </div>
+            <button class="save-btn" onclick="saveAllSettings()">설정 저장</button>`;
+
+            document.getElementById('settingsModal').classList.add('active');
+        }
+
+        function renderTeamEdit(key, name) {
+            return `<div style="margin-bottom:15px"><strong>${name}팀</strong><div class="team-members" id="tm-${key}">${settings.teams[key].map(m => `<span class="team-member">${m}<button class="remove-btn" onclick="removeMember('${key}','${m}')">&times;</button></span>`).join('')}</div><div class="add-member"><input id="nm-${key}" placeholder="새 팀원"><button onclick="addMember('${key}')">추가</button></div></div>`;
+        }
+        function addMember(k) { const i = document.getElementById(`nm-${k}`), n = i.value.trim(); if (n && !settings.teams[k].includes(n)) { settings.teams[k].push(n); i.value = ''; showSettings(); } }
+        function removeMember(k, n) { settings.teams[k] = settings.teams[k].filter(m => m !== n); showSettings(); }
+
+        function saveAllSettings() {
+            settings.dayShiftStart = document.getElementById('sDayStart').value;
+            settings.nightShiftStart = document.getElementById('sNightStart').value;
+            settings.silrerReferenceDate = document.getElementById('sSilrer').value;
+            settings.silrerStartTeam = document.getElementById('sSilrerTeam').value;
+            settings.materialHandler = document.getElementById('sMaterial').value;
+            settings.ccrStartWorkers = {
+                day: { day1am: document.getElementById('swDayAm1').value, day1pm: document.getElementById('swDayPm1').value, day2am: document.getElementById('swDayAm2').value, day2pm: document.getElementById('swDayPm2').value },
+                night: { day1am: document.getElementById('swNightAm1').value, day1pm: document.getElementById('swNightPm1').value, day2am: document.getElementById('swNightAm2').value, day2pm: document.getElementById('swNightPm2').value }
+            };
+            ['A', 'B', 'C', 'D', 'E'].forEach(t => {
+                settings.cTeams[t] = [
+                    document.getElementById(`ct-${t}-0`).value,
+                    document.getElementById(`ct-${t}-1`).value,
+                    document.getElementById(`ct-${t}-2`).value
+                ];
+            });
+            saveSettings4(); closeSettings(); renderCalendar(); alert('설정이 저장되었습니다.');
+        }
+        function closeSettings() { document.getElementById('settingsModal').classList.remove('active'); }
+
+        function showYearOverview() {
+            document.getElementById('yearModalTitle').textContent = `${currentYear}년`;
+            let h = '';
+            for (let m = 1; m <= 12; m++) {
+                h += `<div class="mini-month" onclick="currentMonth=${m};closeYearModal();renderCalendar()"><h4>${m}월</h4><div class="mini-calendar">`;
+                h += '<div class="mheader">일</div><div class="mheader">월</div><div class="mheader">화</div><div class="mheader">수</div><div class="mheader">목</div><div class="mheader">금</div><div class="mheader">토</div>';
+                const days = getDaysInMonth(currentYear, m), first = getFirstDayOfMonth(currentYear, m);
+                for (let i = 0; i < first; i++) h += '<div class="mday"></div>';
+                for (let d = 1; d <= days; d++) {
+                    const dow = new Date(currentYear, m - 1, d).getDay();
+                    const hol = getHoliday(currentYear, m, d);
+                    let cls = 'mday';
+                    if (dow === 0 || hol) cls += ' msunday';
+                    else if (dow === 6) cls += ' msaturday';
+                    h += `<div class="${cls}">${d}</div>`;
+                }
+                h += '</div></div>';
+            }
+            document.getElementById('yearOverview').innerHTML = h;
+            document.getElementById('yearModal').classList.add('active');
+        }
+        function closeYearModal() { document.getElementById('yearModal').classList.remove('active'); }
+
+        function exportData() {
+            const d = { settings, calendarData, exportDate: new Date().toISOString() };
+            const b = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' });
+            const l = document.createElement('a'); l.download = `CCR_백업_${new Date().toISOString().slice(0, 10)}.json`; l.href = URL.createObjectURL(b); l.click();
+        }
+        function importData(e) {
+            const f = e.target.files[0]; if (!f) return;
+            const r = new FileReader();
+            r.onload = ev => {
+                try {
+                    const d = JSON.parse(ev.target.result);
+                    if (d.settings) settings = d.settings;
+                    if (d.calendarData) calendarData = d.calendarData;
+                    saveSettings4(); saveData(); renderCalendar(); alert('데이터를 가져왔습니다.');
+                } catch { alert('파일 오류'); }
+            };
+            r.readAsText(f); e.target.value = '';
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (localStorage.getItem('theme') === 'dark') document.body.dataset.theme = 'dark';
+            renderCalendar();
+        });
+    </script>
+</body>
+
+</html>
