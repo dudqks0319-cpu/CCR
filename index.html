@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>A조 CCR 근무 달력</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
       :root {
         --hyundai-blue: #002c5f;
@@ -1188,52 +1189,80 @@
       // 관리자 인증 상태
       let isAdmin = false;
       let adminKey = '';
-      const API_URL = '/api/data';  // Vercel API 경로
+      
+      // Supabase 직접 연결 설정
+      const SUPABASE_URL = 'https://oznrhhaorkqplmsvcyoo.supabase.co';
+      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96bnJoaGFvcmtxcGxtc3ZjeW9vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5MDc4NDUsImV4cCI6MjA4NDQ4Mzg0NX0.QhKxUJ6zWoYNBxfBWz8OY8eFLCvRWY89eNcLvWH4HE0';
+      const ADMIN_PASSWORD = '3325';
+      let supabase = null;
+      
+      // Supabase 클라이언트 초기화
+      function initSupabase() {
+          if (typeof window.supabase !== 'undefined') {
+              supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+              console.log('✅ Supabase 연결 성공');
+          }
+      }
 
-      // 서버에서 데이터 로드 (API 사용 가능할 때)
+      // 서버에서 데이터 로드 (Supabase 직접 연결)
       async function loadFromServer() {
+          if (!supabase) {
+              console.log('ℹ️ Supabase 미연결, 로컬 데이터 사용');
+              return;
+          }
           try {
-              const res = await fetch(API_URL);
-              if (res.ok) {
-                  const data = await res.json();
+              const { data, error } = await supabase
+                  .from('ccr_data')
+                  .select('*')
+                  .eq('id', 'main')
+                  .single();
+              
+              if (error && error.code !== 'PGRST116') {
+                  throw error;
+              }
+              
+              if (data) {
                   if (data.settings) {
                       settings = data.settings;
                       localStorage.setItem("ccrSettings4", JSON.stringify(settings));
                   }
-                  if (data.calendarData) {
-                      calendarData = data.calendarData;
+                  if (data.calendar_data) {
+                      calendarData = data.calendar_data;
                       localStorage.setItem("ccrCalendarData4", JSON.stringify(calendarData));
                   }
                   renderCalendar();
-                  console.log('✅ 서버에서 데이터 로드 완료');
+                  console.log('✅ Supabase에서 데이터 로드 완료');
               }
           } catch (e) {
-              console.log('ℹ️ 로컬 모드로 실행 중 (API 없음)');
+              console.log('ℹ️ 로컬 모드로 실행 중:', e.message);
           }
       }
 
       // 서버에 데이터 저장 (관리자만)
       async function saveToServer() {
           if (!isAdmin) return false;
+          if (!supabase) {
+              console.log('ℹ️ Supabase 미연결, 로컬 저장만');
+              return false;
+          }
           try {
-              const res = await fetch(API_URL, {
-                  method: 'POST',
-                  headers: { 
-                      'Content-Type': 'application/json',
-                      'x-admin-key': adminKey 
-                  },
-                  body: JSON.stringify({ settings, calendarData })
-              });
-              if (res.ok) {
-                  console.log('✅ 서버에 저장 완료');
-                  return true;
-              } else {
-                  const err = await res.json();
-                  alert(err.error || '저장 실패');
-                  return false;
-              }
+              const { error } = await supabase
+                  .from('ccr_data')
+                  .upsert({
+                      id: 'main',
+                      settings: settings,
+                      calendar_data: calendarData,
+                      updated_at: new Date().toISOString()
+                  });
+              
+              if (error) throw error;
+              
+              console.log('✅ Supabase에 저장 완료');
+              alert('✅ 서버에 저장되었습니다!\n다른 사람들도 이제 같은 내용을 볼 수 있어요.');
+              return true;
           } catch (e) {
-              console.log('ℹ️ 로컬 저장만 완료');
+              console.log('❌ 서버 저장 실패:', e.message);
+              alert('저장 실패: ' + e.message);
               return false;
           }
       }
@@ -1254,35 +1283,14 @@
       async function verifyAdmin() {
           const password = document.getElementById('adminPassword').value;
           
-          // 먼저 서버에서 검증 시도
-          try {
-              const res = await fetch(API_URL, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ password })
-              });
-              if (res.ok) {
-                  isAdmin = true;
-                  adminKey = password;
-                  closeAdminModal();
-                  updateAdminUI();
-                  alert('✅ 관리자 모드로 전환되었습니다.\n이제 설정을 수정할 수 있습니다.');
-                  return;
-              }
-              // API가 404나 다른 에러를 반환하면 로컬 체크로 fallback
-              if (res.status === 404 || res.status >= 500) {
-                  throw new Error('API not available');
-              }
-          } catch (e) {
-              // 서버 없거나 오류시 로컬 비밀번호로 체크
-              if (password === '3325') {
-                  isAdmin = true;
-                  adminKey = password;
-                  closeAdminModal();
-                  updateAdminUI();
-                  alert('✅ 관리자 모드 활성화!');
-                  return;
-              }
+          // 비밀번호 확인
+          if (password === ADMIN_PASSWORD) {
+              isAdmin = true;
+              adminKey = password;
+              closeAdminModal();
+              updateAdminUI();
+              alert('✅ 관리자 모드 활성화!\n이제 설정을 수정하면 모든 사람이 볼 수 있어요.');
+              return;
           }
           
           document.getElementById('adminError').style.display = 'block';
@@ -2191,7 +2199,8 @@
         if (localStorage.getItem("theme") === "dark")
           document.body.dataset.theme = "dark";
         renderCalendar();
-        // 서버에서 최신 데이터 로드 (API 있으면)
+        // Supabase 초기화 후 서버에서 최신 데이터 로드
+        initSupabase();
         loadFromServer();
       });
     </script>
