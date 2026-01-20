@@ -1,17 +1,19 @@
-import { createClient } from '@supabase/supabase-js';
+const { createClient } = require('@supabase/supabase-js');
 
 // Supabase 클라이언트 초기화
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 // 관리자 비밀번호 (환경변수에서 가져옴)
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '3325';
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
+    // Supabase 클라이언트 (요청마다 생성)
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    
     // CORS 헤더 설정
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-key');
     
     if (req.method === 'OPTIONS') {
@@ -71,7 +73,7 @@ export default async function handler(req, res) {
             return res.status(200).json({ success: true, message: '저장되었습니다.' });
         }
 
-        // 비밀번호 확인 엔드포인트
+        // PUT: 비밀번호 확인 엔드포인트
         if (req.method === 'PUT') {
             const { password } = req.body;
             
@@ -88,4 +90,4 @@ export default async function handler(req, res) {
         console.error('API Error:', error);
         return res.status(500).json({ error: '서버 오류가 발생했습니다.' });
     }
-}
+};
