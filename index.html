@@ -1148,10 +1148,20 @@
     </div>
 
     <script>
-      console.log('CCR Calendar App v1.0.1 - Async/Await Fix Applied');
+      // === Global Error Handling & Version Info ===
+      window.CCR_VERSION = "v1.0.2 - Restore & Fix";
+      console.log(`🚀 CSR Calendar App ${window.CCR_VERSION} Initializing...`);
+
+      window.onerror = function(msg, url, lineNo, columnNo, error) {
+        console.error('❌ Global Error:', msg, '\nURL:', url, '\nLine:', lineNo, '\nColumn:', columnNo, '\nError object:', error);
+        // alert('시스템 오류가 발생했습니다. 관리자에게 문의해주세요.\n' + msg);
+        return false;
+      };
+
+      // === Settings & Initialization ===
       const DEFAULT_SETTINGS = {
-        dayShiftStart: "2026-01-05",
-        nightShiftStart: "2026-01-12",
+        dayShiftStart: "2026-01-05", // 2026년 첫 A조 주간 시작일
+        nightShiftStart: "2026-01-12", // 2026년 첫 A조 야간 시작일 (주간 다음주)
         silrerReferenceDate: "2026-01-05",
         silrerStartTeam: "주설비",
         materialHandler: "",
@@ -1179,34 +1189,49 @@
         },
       };
 
-      let settings =
-        JSON.parse(localStorage.getItem("ccrSettings4")) ||
-        JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
-      let calendarData =
-        JSON.parse(localStorage.getItem("ccrCalendarData4")) || {};
-      let currentYear = 2026,
-        currentMonth = 1;
+      // === Global Variables ===
+      // window 객체에 할당하여 모듈 스코프 이슈 방지
+      try {
+        window.settings = JSON.parse(localStorage.getItem("ccrSettings4")) || JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+      } catch (e) {
+        console.error("Settings parse error, using default", e);
+        window.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+      }
+
+      try {
+        window.calendarData = JSON.parse(localStorage.getItem("ccrCalendarData4")) || {};
+      } catch (e) {
+        console.error("Calendar data parse error, using empty", e);
+        window.calendarData = {};
+      }
       
-      // 관리자 인증 상태
+      let currentYear = 2026;
+      let currentMonth = 1;
       let isAdmin = false;
-      let adminKey = '';
-      
-      // Supabase 직접 연결 설정
+      let adminKey = null;
+
+      // Supabase Constants
       const SUPABASE_URL = 'https://oznrhhaorkqplmsvcyoo.supabase.co';
       const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96bnJoaGFvcmtxcGxtc3ZjeW9vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5MDc4NDUsImV4cCI6MjA4NDQ4Mzg0NX0.QhKxUJ6zWoYNBxfBWz8OY8eFLCvRWY89eNcLvWH4HE0';
       const ADMIN_PASSWORD = '3325';
       let supabase = null;
-      
-      // Supabase 클라이언트 초기화
+
+      // === Supabase Integration ===
       function initSupabase() {
-          if (typeof window.supabase !== 'undefined') {
-              supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-              console.log('✅ Supabase 연결 성공');
+          try {
+            if (typeof window.supabase !== 'undefined') {
+                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                console.log('✅ Supabase 연결 성공');
+            } else {
+                console.warn('⚠️ Supabase 라이브러리가 로드되지 않았습니다.');
+            }
+          } catch(e) {
+              console.error('❌ Supabase Init Error:', e);
           }
       }
 
-      // 서버에서 데이터 로드 (Supabase 직접 연결)
-      async function loadFromServer() {
+      // 로딩 함수 (Async 명시)
+      window.loadFromServer = async function() {
           if (!supabase) {
               console.log('ℹ️ Supabase 미연결, 로컬 데이터 사용');
               return;
@@ -1218,32 +1243,31 @@
                   .eq('id', 'main')
                   .single();
               
-              if (error && error.code !== 'PGRST116') {
-                  throw error;
-              }
+              if (error && error.code !== 'PGRST116') throw error;
               
               if (data) {
                   if (data.settings) {
-                      settings = data.settings;
-                      localStorage.setItem("ccrSettings4", JSON.stringify(settings));
+                      window.settings = data.settings;
+                      localStorage.setItem("ccrSettings4", JSON.stringify(window.settings));
                   }
                   if (data.calendar_data) {
-                      calendarData = data.calendar_data;
-                      localStorage.setItem("ccrCalendarData4", JSON.stringify(calendarData));
+                      window.calendarData = data.calendar_data;
+                      localStorage.setItem("ccrCalendarData4", JSON.stringify(window.calendarData));
                   }
-                  renderCalendar();
+                  // 데이터 로드 후 렌더링 갱신
+                  if (typeof renderCalendar === 'function') renderCalendar();
                   console.log('✅ Supabase에서 데이터 로드 완료');
               }
           } catch (e) {
-              console.log('ℹ️ 로컬 모드로 실행 중:', e.message);
+              console.log('ℹ️ 로컬 모드로 실행 중 (서버 로드 실패):', e.message);
           }
-      }
+      };
 
-      // 서버에 데이터 저장 (관리자만)
-      async function saveToServer() {
+      // 저장 함수 (Async 명시)
+      window.saveToServer = async function() {
           if (!isAdmin) return false;
           if (!supabase) {
-              console.log('ℹ️ Supabase 미연결, 로컬 저장만');
+              console.log('ℹ️ Supabase 미연결, 로컬 저장만 수행');
               return false;
           }
           try {
@@ -1251,66 +1275,81 @@
                   .from('ccr_data')
                   .upsert({
                       id: 'main',
-                      settings: settings,
-                      calendar_data: calendarData,
+                      settings: window.settings,
+                      calendar_data: window.calendarData,
                       updated_at: new Date().toISOString()
                   });
               
               if (error) throw error;
               
-              console.log('✅ Supabase에 저장 완료');
-              alert('✅ 서버에 저장되었습니다!\n다른 사람들도 이제 같은 내용을 볼 수 있어요.');
+              console.log('✅ Supabase 저장 완료');
+              alert('✅ 서버에 저장되었습니다!');
               return true;
           } catch (e) {
-              console.log('❌ 서버 저장 실패:', e.message);
-              alert('저장 실패: ' + e.message);
+              console.error('❌ 서버 저장 실패:', e);
+              alert('서버 저장 실패: ' + e.message);
               return false;
           }
-      }
+      };
 
-      // 관리자 모달 표시
-      function showAdminLogin() {
-          document.getElementById('adminModal').classList.add('active');
-          document.getElementById('adminPassword').value = '';
-          document.getElementById('adminError').style.display = 'none';
-          setTimeout(() => document.getElementById('adminPassword').focus(), 100);
-      }
+      // === Admin Functions ===
+      // 전역 범위에 노출
+      window.showAdminLogin = function() {
+          const modal = document.getElementById('adminModal');
+          if(modal) {
+            modal.classList.add('active');
+            const pwInput = document.getElementById('adminPassword');
+            if(pwInput) {
+                pwInput.value = '';
+                setTimeout(() => pwInput.focus(), 100);
+            }
+            const errDiv = document.getElementById('adminError');
+            if(errDiv) errDiv.style.display = 'none';
+          } else {
+              console.error('Admin modal element not found!');
+          }
+      };
       
-      function closeAdminModal() {
-          document.getElementById('adminModal').classList.remove('active');
-      }
+      window.closeAdminModal = function() {
+          const modal = document.getElementById('adminModal');
+          if(modal) modal.classList.remove('active');
+      };
 
-      // 관리자 인증
-      async function verifyAdmin() {
-          const password = document.getElementById('adminPassword').value;
+      window.verifyAdmin = async function() {
+          const pwInput = document.getElementById('adminPassword');
+          if(!pwInput) return;
           
-          // 비밀번호 확인
+          const password = pwInput.value;
+          
           if (password === ADMIN_PASSWORD) {
               isAdmin = true;
               adminKey = password;
               closeAdminModal();
               updateAdminUI();
-              alert('✅ 관리자 모드 활성화!\n이제 설정을 수정하면 모든 사람이 볼 수 있어요.');
-              return;
+              alert('✅ 관리자 모드 활성화!');
+          } else {
+              const errDiv = document.getElementById('adminError');
+              if(errDiv) errDiv.style.display = 'block';
           }
-          
-          document.getElementById('adminError').style.display = 'block';
-      }
+      };
 
-      // 관리자 UI 업데이트
-      function updateAdminUI() {
+      window.updateAdminUI = function() {
           const adminBtn = document.getElementById('adminBtn');
           const settingsBtn = document.getElementById('settingsBtn');
           if (isAdmin) {
-              adminBtn.innerHTML = '🔐 관리자';
-              adminBtn.style.background = '#4caf50';
-              settingsBtn.style.display = 'inline-flex';
+              if(adminBtn) {
+                  adminBtn.innerHTML = '🔐 관리자';
+                  adminBtn.style.background = '#4caf50';
+              }
+              if(settingsBtn) settingsBtn.style.display = 'inline-flex';
           } else {
-              adminBtn.innerHTML = '🔓 관리자';
-              adminBtn.style.background = '';
-              settingsBtn.style.display = 'none';
+              if(adminBtn) {
+                  adminBtn.innerHTML = '🔓 관리자';
+                  adminBtn.style.background = '';
+              }
+              if(settingsBtn) settingsBtn.style.display = 'none';
           }
-      }
+      };
 
 
       const HOLIDAYS = {
