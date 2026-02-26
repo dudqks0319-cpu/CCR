@@ -6,6 +6,8 @@
     <title>A조 CCR 근무 달력</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="./ccr-state-utils.js"></script>
     <style>
       :root {
         --hyundai-blue: #002c5f;
@@ -182,6 +184,11 @@
 
       .btn-print {
         background: #ff9800;
+        color: white;
+      }
+
+      .btn-pdf {
+        background: #e53935;
         color: white;
       }
 
@@ -445,7 +452,7 @@
 
       .bottom-memo textarea {
         width: 100%;
-        height: 80px;
+        height: 100px;
         border: 2px solid rgba(0, 0, 0, 0.1);
         border-radius: 8px;
         padding: 12px;
@@ -816,6 +823,17 @@
         color: #2e7d32;
       }
 
+      /* 휴일 설정 버튼은 색상 의미를 반대로: ON=빨강, OFF=초록 */
+      .holiday-toggle.on {
+        background: #ffcdd2;
+        color: #c62828;
+      }
+
+      .holiday-toggle.off {
+        background: #c8e6c9;
+        color: #2e7d32;
+      }
+
       /* 인쇄용 헤더 (평소에는 숨김) */
       .print-header {
         display: none;
@@ -1008,6 +1026,7 @@
           <button class="btn-screenshot" onclick="takeScreenshot()">
             📷 캡처
           </button>
+          <button class="btn-pdf" onclick="exportPdf()">📄 PDF</button>
           <button class="btn-print" onclick="printCalendar()">🖨️ 인쇄</button>
           <button class="btn-theme" onclick="toggleTheme()">🌓</button>
         </div>
@@ -1067,6 +1086,7 @@
         <textarea
           id="bottomMemo"
           placeholder="메모를 입력하세요..."
+          oninput="saveBottomMemo()"
           onchange="saveBottomMemo()"
         ></textarea>
       </div>
@@ -1190,106 +1210,406 @@
       };
 
       // === Global Variables ===
-      // window 객체에 할당하여 모듈 스코프 이슈 방지
-      try {
-        window.settings = JSON.parse(localStorage.getItem("ccrSettings4")) || JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
-      } catch (e) {
-        console.error("Settings parse error, using default", e);
-        window.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+      const STATE_UTILS = window.CCRStateUtils || {};
+      const buildPdfFileName =
+        STATE_UTILS.buildPdfFileName ||
+        ((year, month) => `CCR_${year}년_${String(month).padStart(2, "0")}월.pdf`);
+      const createStateEnvelope =
+        STATE_UTILS.createStateEnvelope ||
+        ((savedSettings, savedCalendarData, updatedAt) => {
+          const hasExplicitUpdatedAt =
+            updatedAt !== undefined && updatedAt !== null && updatedAt !== "";
+          const parsedUpdatedAt = Number(updatedAt);
+          return {
+            settings: JSON.parse(JSON.stringify(savedSettings || {})),
+            calendarData: JSON.parse(JSON.stringify(savedCalendarData || {})),
+            updatedAt:
+              hasExplicitUpdatedAt && Number.isFinite(parsedUpdatedAt)
+                ? parsedUpdatedAt
+                : Date.now(),
+          };
+        });
+      const getHolidayTogglePresentation =
+        STATE_UTILS.getHolidayTogglePresentation ||
+        ((isCustomHoliday) => {
+          const stateClass = isCustomHoliday ? "on" : "off";
+          return {
+            stateClass,
+            classes: `toggle-btn holiday-toggle ${stateClass}`,
+            label: isCustomHoliday ? "❌ 휴일 (빨간날)" : "✅ 일반 근무일",
+          };
+        });
+      const mergeSettingsWithDefault =
+        STATE_UTILS.mergeSettingsWithDefault ||
+        ((defaultSettings, savedSettings) => {
+          const base = JSON.parse(JSON.stringify(defaultSettings || {}));
+          if (!savedSettings || typeof savedSettings !== "object") return base;
+          return {
+            ...base,
+            ...savedSettings,
+            teams: {
+              ...(base.teams || {}),
+              ...((savedSettings.teams && typeof savedSettings.teams === "object")
+                ? savedSettings.teams
+                : {}),
+            },
+            cTeams: {
+              ...(base.cTeams || {}),
+              ...((savedSettings.cTeams && typeof savedSettings.cTeams === "object")
+                ? savedSettings.cTeams
+                : {}),
+            },
+            cTeamByMonth: {
+              ...(base.cTeamByMonth || {}),
+              ...((savedSettings.cTeamByMonth &&
+              typeof savedSettings.cTeamByMonth === "object")
+                ? savedSettings.cTeamByMonth
+                : {}),
+            },
+            ccrStartWorkers: {
+              day: {
+                ...((base.ccrStartWorkers && base.ccrStartWorkers.day) || {}),
+                ...((savedSettings.ccrStartWorkers &&
+                savedSettings.ccrStartWorkers.day) || {}),
+              },
+              night: {
+                ...((base.ccrStartWorkers && base.ccrStartWorkers.night) || {}),
+                ...((savedSettings.ccrStartWorkers &&
+                savedSettings.ccrStartWorkers.night) || {}),
+              },
+            },
+          };
+        });
+      const pickLatestStateEnvelope =
+        STATE_UTILS.pickLatestStateEnvelope ||
+        ((candidates, defaults) => {
+          const list = Array.isArray(candidates) ? candidates : [candidates];
+          const normalized = list
+            .filter(Boolean)
+            .map((candidate) => ({
+              settings: mergeSettingsWithDefault(defaults, candidate.settings),
+              calendarData:
+                candidate.calendarData &&
+                typeof candidate.calendarData === "object" &&
+                !Array.isArray(candidate.calendarData)
+                  ? candidate.calendarData
+                  : {},
+              updatedAt: Number(candidate.updatedAt) || 0,
+            }))
+            .sort((a, b) => b.updatedAt - a.updatedAt);
+
+          if (normalized.length > 0) return normalized[0];
+
+          return {
+            settings: mergeSettingsWithDefault(defaults, null),
+            calendarData: {},
+            updatedAt: 0,
+          };
+        });
+
+      const shouldApplyServerEnvelope =
+        STATE_UTILS.shouldApplyServerEnvelope ||
+        ((localUpdatedAt, serverUpdatedAt, hasLocalStateCandidate) => {
+          const local = Number(localUpdatedAt);
+          const server = Number(serverUpdatedAt);
+          const normalizedLocal = Number.isFinite(local) ? local : 0;
+          const normalizedServer = Number.isFinite(server) ? server : 0;
+
+          if (normalizedServer > normalizedLocal) return true;
+          if (!hasLocalStateCandidate && normalizedServer > 0) return true;
+          return false;
+        });
+
+      const STORAGE_KEYS = {
+        settings: "ccrSettings4",
+        calendarData: "ccrCalendarData4",
+        bundle: "ccrStateBundle4",
+        bundleBackup: "ccrStateBundle4Backup",
+      };
+
+      const IDB_NAME = "ccrCalendarBackupDB";
+      const IDB_STORE = "state";
+      const IDB_KEY = "latest";
+      let dbPromise = null;
+
+      function safeParseJSON(raw) {
+        if (!raw) return null;
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return null;
+        }
       }
 
-      try {
-        window.calendarData = JSON.parse(localStorage.getItem("ccrCalendarData4")) || {};
-      } catch (e) {
-        console.error("Calendar data parse error, using empty", e);
-        window.calendarData = {};
+      function applyStateEnvelope(envelope) {
+        settings = mergeSettingsWithDefault(DEFAULT_SETTINGS, envelope?.settings);
+        calendarData =
+          envelope?.calendarData &&
+          typeof envelope.calendarData === "object" &&
+          !Array.isArray(envelope.calendarData)
+            ? envelope.calendarData
+            : {};
+        stateUpdatedAt = Number(envelope?.updatedAt) || stateUpdatedAt || Date.now();
+        window.settings = settings;
+        window.calendarData = calendarData;
       }
-      
+
+      function persistLocalState(envelope) {
+        try {
+          const normalized = createStateEnvelope(
+            mergeSettingsWithDefault(DEFAULT_SETTINGS, envelope?.settings),
+            envelope?.calendarData || {},
+            envelope?.updatedAt,
+          );
+          localStorage.setItem(STORAGE_KEYS.bundle, JSON.stringify(normalized));
+          localStorage.setItem(STORAGE_KEYS.bundleBackup, JSON.stringify(normalized));
+          localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(normalized.settings));
+          localStorage.setItem(
+            STORAGE_KEYS.calendarData,
+            JSON.stringify(normalized.calendarData),
+          );
+        } catch (e) {
+          console.warn("로컬 저장 실패", e);
+        }
+      }
+
+      function loadLocalStateCandidates() {
+        const candidates = [];
+        const bundle = safeParseJSON(localStorage.getItem(STORAGE_KEYS.bundle));
+        const backup = safeParseJSON(localStorage.getItem(STORAGE_KEYS.bundleBackup));
+        if (bundle) candidates.push(bundle);
+        if (backup) candidates.push(backup);
+
+        const legacySettings = safeParseJSON(localStorage.getItem(STORAGE_KEYS.settings));
+        const legacyCalendarData = safeParseJSON(
+          localStorage.getItem(STORAGE_KEYS.calendarData),
+        );
+        if (legacySettings || legacyCalendarData) {
+          candidates.push({
+            settings: legacySettings,
+            calendarData: legacyCalendarData || {},
+            updatedAt: 1,
+          });
+        }
+
+        return candidates;
+      }
+
+      function getStateDb() {
+        if (!("indexedDB" in window)) return Promise.resolve(null);
+        if (dbPromise) return dbPromise;
+
+        dbPromise = new Promise((resolve) => {
+          const request = indexedDB.open(IDB_NAME, 1);
+          request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(IDB_STORE)) {
+              db.createObjectStore(IDB_STORE);
+            }
+          };
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => {
+            console.warn("IndexedDB 초기화 실패", request.error);
+            resolve(null);
+          };
+        });
+
+        return dbPromise;
+      }
+
+      async function saveEnvelopeToIndexedDB(envelope) {
+        const db = await getStateDb();
+        if (!db) return;
+
+        await new Promise((resolve) => {
+          const tx = db.transaction(IDB_STORE, "readwrite");
+          tx.objectStore(IDB_STORE).put(envelope, IDB_KEY);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => {
+            console.warn("IndexedDB 저장 실패", tx.error);
+            resolve();
+          };
+        });
+      }
+
+      async function loadEnvelopeFromIndexedDB() {
+        const db = await getStateDb();
+        if (!db) return null;
+
+        return new Promise((resolve) => {
+          const tx = db.transaction(IDB_STORE, "readonly");
+          const request = tx.objectStore(IDB_STORE).get(IDB_KEY);
+          request.onsuccess = () => resolve(request.result || null);
+          request.onerror = () => {
+            console.warn("IndexedDB 로드 실패", request.error);
+            resolve(null);
+          };
+        });
+      }
+
+      function getCurrentEnvelope(updatedAt) {
+        return createStateEnvelope(settings, calendarData, updatedAt || stateUpdatedAt);
+      }
+
+      async function persistState(options = {}) {
+        const { syncServer = true, showServerAlert = false } = options;
+        const envelope = getCurrentEnvelope(Date.now());
+        stateUpdatedAt = envelope.updatedAt;
+        persistLocalState(envelope);
+        saveEnvelopeToIndexedDB(envelope);
+
+        if (syncServer && isAdmin) {
+          await saveToServer(showServerAlert);
+        }
+      }
+
+      async function hydrateStateFromIndexedDB() {
+        const indexedState = await loadEnvelopeFromIndexedDB();
+        if (!indexedState) return;
+
+        const merged = pickLatestStateEnvelope(
+          [getCurrentEnvelope(stateUpdatedAt), indexedState],
+          DEFAULT_SETTINGS,
+        );
+
+        if ((merged.updatedAt || 0) > (stateUpdatedAt || 0)) {
+          applyStateEnvelope(merged);
+          persistLocalState(merged);
+          if (typeof renderCalendar === "function") renderCalendar();
+        }
+      }
+
+      const localStateCandidates = loadLocalStateCandidates();
+      const hasLocalStateCandidateAtBoot = localStateCandidates.length > 0;
+      const initialEnvelope = pickLatestStateEnvelope(
+        localStateCandidates,
+        DEFAULT_SETTINGS,
+      );
+
+      let settings = mergeSettingsWithDefault(DEFAULT_SETTINGS, initialEnvelope.settings);
+      let calendarData =
+        initialEnvelope.calendarData &&
+        typeof initialEnvelope.calendarData === "object" &&
+        !Array.isArray(initialEnvelope.calendarData)
+          ? initialEnvelope.calendarData
+          : {};
+      const initialUpdatedAt = Number(initialEnvelope.updatedAt);
+      let stateUpdatedAt = Number.isFinite(initialUpdatedAt)
+        ? initialUpdatedAt
+        : 0;
+
+      window.settings = settings;
+      window.calendarData = calendarData;
+      persistLocalState(getCurrentEnvelope(stateUpdatedAt));
+
       let currentYear = 2026;
       let currentMonth = 1;
       let isAdmin = false;
       let adminKey = null;
 
+      function syncCurrentYearMonth() {
+        window.currentYear = currentYear;
+        window.currentMonth = currentMonth;
+      }
+      syncCurrentYearMonth();
+
       // Supabase Constants
-      const SUPABASE_URL = 'https://oznrhhaorkqplmsvcyoo.supabase.co';
-      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96bnJoaGFvcmtxcGxtc3ZjeW9vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5MDc4NDUsImV4cCI6MjA4NDQ4Mzg0NX0.QhKxUJ6zWoYNBxfBWz8OY8eFLCvRWY89eNcLvWH4HE0';
-      const ADMIN_PASSWORD = '3325';
-      let supabase = null;
+      const SUPABASE_URL = "https://oznrhhaorkqplmsvcyoo.supabase.co";
+      const SUPABASE_ANON_KEY = [
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+        "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96bnJoaGFvcmtxcGxtc3ZjeW9vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5MDc4NDUsImV4cCI6MjA4NDQ4Mzg0NX0",
+        "QhKxUJ6zWoYNBxfBWz8OY8eFLCvRWY89eNcLvWH4HE0",
+      ].join(".");
+      const ADMIN_PASSWORD = "3325";
+      let supabaseClient = null;
 
       // === Supabase Integration ===
       function initSupabase() {
-          try {
-            if (typeof window.supabase !== 'undefined') {
-                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-                console.log('✅ Supabase 연결 성공');
-            } else {
-                console.warn('⚠️ Supabase 라이브러리가 로드되지 않았습니다.');
-            }
-          } catch(e) {
-              console.error('❌ Supabase Init Error:', e);
+        try {
+          if (typeof window.supabase !== "undefined") {
+            supabaseClient = window.supabase.createClient(
+              SUPABASE_URL,
+              SUPABASE_ANON_KEY,
+            );
+            console.log("✅ Supabase 연결 성공");
+          } else {
+            console.warn("⚠️ Supabase 라이브러리가 로드되지 않았습니다.");
           }
+        } catch (e) {
+          console.error("❌ Supabase Init Error:", e);
+        }
       }
 
-      // 로딩 함수 (Async 명시)
-      window.loadFromServer = async function() {
-          if (!supabase) {
-              console.log('ℹ️ Supabase 미연결, 로컬 데이터 사용');
-              return;
+      // 로딩 함수
+      window.loadFromServer = async function () {
+        if (!supabaseClient) {
+          console.log("ℹ️ Supabase 미연결, 로컬 데이터 사용");
+          return;
+        }
+
+        try {
+          const { data, error } = await supabaseClient
+            .from("ccr_data")
+            .select("*")
+            .eq("id", "main")
+            .single();
+
+          if (error && error.code !== "PGRST116") throw error;
+          if (!data) return;
+
+          const serverEnvelope = createStateEnvelope(
+            data.settings || settings,
+            data.calendar_data || calendarData,
+            data.updated_at ? Date.parse(data.updated_at) : 0,
+          );
+
+          const shouldAdoptServer = shouldApplyServerEnvelope(
+            stateUpdatedAt,
+            serverEnvelope.updatedAt,
+            hasLocalStateCandidateAtBoot,
+          );
+
+          if (shouldAdoptServer) {
+            applyStateEnvelope(serverEnvelope);
+            persistLocalState(serverEnvelope);
+            saveEnvelopeToIndexedDB(serverEnvelope);
+            if (typeof renderCalendar === "function") renderCalendar();
+            console.log("✅ Supabase 데이터 반영 완료");
+          } else {
+            console.log("ℹ️ 로컬 데이터가 더 최신입니다. 서버 데이터 반영 생략");
           }
-          try {
-              const { data, error } = await supabase
-                  .from('ccr_data')
-                  .select('*')
-                  .eq('id', 'main')
-                  .single();
-              
-              if (error && error.code !== 'PGRST116') throw error;
-              
-              if (data) {
-                  if (data.settings) {
-                      window.settings = data.settings;
-                      localStorage.setItem("ccrSettings4", JSON.stringify(window.settings));
-                  }
-                  if (data.calendar_data) {
-                      window.calendarData = data.calendar_data;
-                      localStorage.setItem("ccrCalendarData4", JSON.stringify(window.calendarData));
-                  }
-                  // 데이터 로드 후 렌더링 갱신
-                  if (typeof renderCalendar === 'function') renderCalendar();
-                  console.log('✅ Supabase에서 데이터 로드 완료');
-              }
-          } catch (e) {
-              console.log('ℹ️ 로컬 모드로 실행 중 (서버 로드 실패):', e.message);
-          }
+        } catch (e) {
+          console.log("ℹ️ 로컬 모드로 실행 중 (서버 로드 실패):", e.message);
+        }
       };
 
-      // 저장 함수 (Async 명시)
-      window.saveToServer = async function() {
-          if (!isAdmin) return false;
-          if (!supabase) {
-              console.log('ℹ️ Supabase 미연결, 로컬 저장만 수행');
-              return false;
-          }
-          try {
-              const { error } = await supabase
-                  .from('ccr_data')
-                  .upsert({
-                      id: 'main',
-                      settings: window.settings,
-                      calendar_data: window.calendarData,
-                      updated_at: new Date().toISOString()
-                  });
-              
-              if (error) throw error;
-              
-              console.log('✅ Supabase 저장 완료');
-              alert('✅ 서버에 저장되었습니다!');
-              return true;
-          } catch (e) {
-              console.error('❌ 서버 저장 실패:', e);
-              alert('서버 저장 실패: ' + e.message);
-              return false;
-          }
+      // 저장 함수
+      window.saveToServer = async function (showAlert = true) {
+        if (!isAdmin) return false;
+        if (!supabaseClient) {
+          console.log("ℹ️ Supabase 미연결, 로컬 저장만 수행");
+          return false;
+        }
+
+        try {
+          const envelope = getCurrentEnvelope(stateUpdatedAt || Date.now());
+          const { error } = await supabaseClient.from("ccr_data").upsert({
+            id: "main",
+            settings: envelope.settings,
+            calendar_data: envelope.calendarData,
+            updated_at: new Date(envelope.updatedAt).toISOString(),
+          });
+
+          if (error) throw error;
+
+          console.log("✅ Supabase 저장 완료");
+          if (showAlert) alert("✅ 서버에 저장되었습니다!");
+          return true;
+        } catch (e) {
+          console.error("❌ 서버 저장 실패:", e);
+          if (showAlert) alert("서버 저장 실패: " + e.message);
+          return false;
+        }
       };
 
       // === Admin Functions ===
@@ -1581,8 +1901,17 @@
 
       function getCTeamMembers(year, month) {
         const k = `${year}-${String(month).padStart(2, "0")}`;
-        const teamKey = settings.cTeamByMonth[k] || "";
-        return teamKey ? settings.cTeams[teamKey] || [] : [];
+        const cTeamByMonth =
+          settings.cTeamByMonth && typeof settings.cTeamByMonth === "object"
+            ? settings.cTeamByMonth
+            : {};
+        const cTeams =
+          settings.cTeams && typeof settings.cTeams === "object"
+            ? settings.cTeams
+            : {};
+        const teamKey = cTeamByMonth[k] || "";
+        const members = teamKey ? cTeams[teamKey] : [];
+        return Array.isArray(members) ? members : [];
       }
 
       function getCCRWorkers(date, shiftType) {
@@ -1601,7 +1930,10 @@
 
         // 팀별 근무자 목록 (C조 제외 등 필터링 적용)
         const getWorkers = (team) => {
-          let w = [...settings.teams[team]];
+          const teamWorkers = Array.isArray(settings.teams?.[team])
+            ? settings.teams[team]
+            : [];
+          let w = [...teamWorkers];
           if (shiftType === "day" && settings.materialHandler)
             w = w.filter((x) => x !== settings.materialHandler);
           if (shiftType === "night")
@@ -1746,7 +2078,12 @@
       }
 
       function getSilrerTeam(date) {
-        const [y, m, d] = settings.silrerReferenceDate.split("-").map(Number);
+        const refDateString =
+          typeof settings.silrerReferenceDate === "string" &&
+          settings.silrerReferenceDate.includes("-")
+            ? settings.silrerReferenceDate
+            : DEFAULT_SETTINGS.silrerReferenceDate;
+        const [y, m, d] = refDateString.split("-").map(Number);
         const ref = new Date(y, m - 1, d);
         const localDate = new Date(
           date.getFullYear(),
@@ -1767,7 +2104,11 @@
 
         // Update C-team selector
         const mk = `${currentYear}-${String(currentMonth).padStart(2, "0")}`;
-        const cTeamKey = settings.cTeamByMonth[mk] || "";
+        const cTeamByMonth =
+          settings.cTeamByMonth && typeof settings.cTeamByMonth === "object"
+            ? settings.cTeamByMonth
+            : {};
+        const cTeamKey = cTeamByMonth[mk] || "";
         document.getElementById("cteamSelect").value = cTeamKey;
         const cMembers = cTeamKey
           ? (settings.cTeams[cTeamKey] || []).join(", ")
@@ -1888,12 +2229,14 @@
           currentMonth = 12;
           currentYear--;
         }
+        syncCurrentYearMonth();
         renderCalendar();
       }
       function goToToday() {
         const t = new Date();
         currentYear = t.getFullYear();
         currentMonth = t.getMonth() + 1;
+        syncCurrentYearMonth();
         renderCalendar();
       }
       function saveBottomMemo() {
@@ -1902,12 +2245,10 @@
         saveData();
       }
       function saveData() {
-        localStorage.setItem("ccrCalendarData4", JSON.stringify(calendarData));
-        if (isAdmin) saveToServer();  // 관리자면 서버에도 저장
+        persistState({ syncServer: true, showServerAlert: false });
       }
       function saveSettings4() {
-        localStorage.setItem("ccrSettings4", JSON.stringify(settings));
-        if (isAdmin) saveToServer();  // 관리자면 서버에도 저장
+        persistState({ syncServer: true, showServerAlert: false });
       }
 
       function toggleTheme() {
@@ -1936,6 +2277,108 @@
           }, "image/png");
         });
       }
+      function downloadBlobFile(blob, fileName) {
+        const link = document.createElement("a");
+        link.download = fileName;
+        link.href = URL.createObjectURL(blob);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+      }
+
+      async function exportPdf() {
+        try {
+          if (!window.jspdf?.jsPDF) {
+            alert("PDF 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.");
+            return;
+          }
+
+          const canvas = await html2canvas(document.getElementById("printArea"), {
+            backgroundColor:
+              document.body.dataset.theme === "dark" ? "#1c2228" : "#fff",
+            scale: 2,
+          });
+
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF({
+            orientation: "landscape",
+            unit: "mm",
+            format: "a4",
+            compress: true,
+          });
+
+          const pageWidth = pdf.internal.pageSize.getWidth();
+          const pageHeight = pdf.internal.pageSize.getHeight();
+          const margin = 6;
+          const maxWidth = pageWidth - margin * 2;
+          const maxHeight = pageHeight - margin * 2;
+          const imgRatio = canvas.width / canvas.height;
+
+          let drawWidth = maxWidth;
+          let drawHeight = drawWidth / imgRatio;
+          if (drawHeight > maxHeight) {
+            drawHeight = maxHeight;
+            drawWidth = drawHeight * imgRatio;
+          }
+
+          const x = (pageWidth - drawWidth) / 2;
+          const y = (pageHeight - drawHeight) / 2;
+
+          pdf.addImage(
+            canvas.toDataURL("image/png"),
+            "PNG",
+            x,
+            y,
+            drawWidth,
+            drawHeight,
+            undefined,
+            "FAST",
+          );
+
+          const fileName = buildPdfFileName(currentYear, currentMonth);
+          const pdfBlob = pdf.output("blob");
+
+          if (window.showSaveFilePicker) {
+            try {
+              const pickerOptions = {
+                suggestedName: fileName,
+                types: [
+                  {
+                    description: "PDF 문서",
+                    accept: { "application/pdf": [".pdf"] },
+                  },
+                ],
+              };
+
+              try {
+                pickerOptions.startIn = "desktop";
+              } catch {
+                // startIn 미지원 브라우저는 무시
+              }
+
+              const handle = await window.showSaveFilePicker(pickerOptions);
+              const writable = await handle.createWritable();
+              await writable.write(pdfBlob);
+              await writable.close();
+              alert(`📄 "${fileName}" PDF 저장 완료!`);
+              return;
+            } catch (pickerError) {
+              if (pickerError?.name === "AbortError") return;
+              console.warn("Save File Picker 실패, 다운로드 방식으로 대체", pickerError);
+            }
+          }
+
+          downloadBlobFile(pdfBlob, fileName);
+          alert(
+            `📄 "${fileName}" PDF 저장 완료!\n\n브라우저 권한상 바탕화면 직접 저장이 불가능한 경우\n다운로드 폴더로 저장됩니다.`,
+          );
+        } catch (e) {
+          console.error("PDF 생성 실패", e);
+          alert("PDF 생성에 실패했습니다. 다시 시도해주세요.");
+        }
+      }
+
       function printCalendar() {
         // 인쇄용 헤더 업데이트
         document.getElementById("printTitle").textContent =
@@ -1985,8 +2428,9 @@
         const dow = d.getDay();
         if (dow >= 1 && dow <= 5) {
           const isCustomHoliday = data.isHoliday || false;
+          const holidayToggle = getHolidayTogglePresentation(isCustomHoliday);
           holidayToggleHtml = `<div class="settings-section"><h3>🗓️ 휴일 설정</h3>
-                <button class="toggle-btn ${isCustomHoliday ? "on" : "off"}" onclick="toggleHoliday('${ds}')">${isCustomHoliday ? "✅ 휴일 (빨간날)" : "❌ 일반 근무일"}</button>
+                <button class="${holidayToggle.classes}" onclick="toggleHoliday('${ds}')">${holidayToggle.label}</button>
             </div>`;
         }
 
@@ -2172,12 +2616,19 @@
         document.getElementById("settingsModal").classList.remove("active");
       }
 
+      function setMonthAndRender(month) {
+        currentMonth = month;
+        syncCurrentYearMonth();
+        closeYearModal();
+        renderCalendar();
+      }
+
       function showYearOverview() {
         document.getElementById("yearModalTitle").textContent =
           `${currentYear}년`;
         let h = "";
         for (let m = 1; m <= 12; m++) {
-          h += `<div class="mini-month" onclick="currentMonth=${m};closeYearModal();renderCalendar()"><h4>${m}월</h4><div class="mini-calendar">`;
+          h += `<div class="mini-month" onclick="setMonthAndRender(${m})"><h4>${m}월</h4><div class="mini-calendar">`;
           h +=
             '<div class="mheader">일</div><div class="mheader">월</div><div class="mheader">화</div><div class="mheader">수</div><div class="mheader">목</div><div class="mheader">금</div><div class="mheader">토</div>';
           const days = getDaysInMonth(currentYear, m),
@@ -2221,10 +2672,18 @@
         r.onload = (ev) => {
           try {
             const d = JSON.parse(ev.target.result);
-            if (d.settings) settings = d.settings;
-            if (d.calendarData) calendarData = d.calendarData;
-            saveSettings4();
-            saveData();
+            if (d.settings)
+              settings = mergeSettingsWithDefault(DEFAULT_SETTINGS, d.settings);
+            if (
+              d.calendarData &&
+              typeof d.calendarData === "object" &&
+              !Array.isArray(d.calendarData)
+            )
+              calendarData = d.calendarData;
+            window.settings = settings;
+            window.calendarData = calendarData;
+            stateUpdatedAt = Date.now();
+            persistState({ syncServer: true, showServerAlert: false });
             renderCalendar();
             alert("데이터를 가져왔습니다.");
           } catch {
@@ -2235,14 +2694,82 @@
         e.target.value = "";
       }
 
-      document.addEventListener("DOMContentLoaded", () => {
+      Object.assign(window, {
+        renderCalendar,
+        changeCTeam,
+        changeMonth,
+        goToToday,
+        saveBottomMemo,
+        saveData,
+        saveSettings4,
+        toggleTheme,
+        takeScreenshot,
+        exportPdf,
+        printCalendar,
+        showDateDetail,
+        toggleSatWork,
+        toggleHoliday,
+        saveDateDetail,
+        closeDateModal,
+        showSettings,
+        closeSettings,
+        addMember,
+        removeMember,
+        saveAllSettings,
+        showYearOverview,
+        closeYearModal,
+        setMonthAndRender,
+        exportData,
+        importData,
+      });
+
+      async function requestPersistentBrowserStorage() {
+        try {
+          if (!navigator.storage || !navigator.storage.persist) return;
+          const isPersisted = await navigator.storage.persist();
+          console.log(
+            isPersisted
+              ? "✅ 브라우저 영구 저장소 모드 활성화"
+              : "ℹ️ 브라우저 정책상 영구 저장소 모드 미활성",
+          );
+        } catch (e) {
+          console.warn("영구 저장소 요청 실패", e);
+        }
+      }
+
+      async function initApp() {
         if (localStorage.getItem("theme") === "dark")
           document.body.dataset.theme = "dark";
+
         renderCalendar();
+        await hydrateStateFromIndexedDB();
+        requestPersistentBrowserStorage();
+
         // Supabase 초기화 후 서버에서 최신 데이터 로드
         initSupabase();
         loadFromServer();
-      });
+
+        // 로컬 자동 백업: 브라우저가 오래 비활성화되어도 데이터 유실 가능성 최소화
+        setInterval(() => {
+          persistState({ syncServer: false });
+        }, 30000);
+
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "hidden") {
+            persistState({ syncServer: false });
+          }
+        });
+
+        window.addEventListener("beforeunload", () => {
+          persistLocalState(getCurrentEnvelope(Date.now()));
+        });
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initApp);
+      } else {
+        initApp();
+      }
     </script>
   </body>
 </html>
