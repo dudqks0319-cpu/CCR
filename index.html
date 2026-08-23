@@ -747,6 +747,16 @@
         color: white;
       }
 
+      .file-save-btn {
+        background: #009688;
+        color: white;
+      }
+
+      .file-open-btn {
+        background: #607d8b;
+        color: white;
+      }
+
       .year-overview {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
@@ -1330,7 +1340,9 @@
       const IDB_NAME = "ccrCalendarBackupDB";
       const IDB_STORE = "state";
       const IDB_KEY = "latest";
+      const IDB_FILE_HANDLE_KEY = "schedule-file-handle";
       let dbPromise = null;
+      let scheduleFileHandle = null;
 
       function safeParseJSON(raw) {
         if (!raw) return null;
@@ -1342,7 +1354,7 @@
       }
 
       function applyStateEnvelope(envelope) {
-        settings = mergeSettingsWithDefault(DEFAULT_SETTINGS, envelope?.settings);
+        settings = sanitizeMaterialStartWorkersInSettings(envelope?.settings);
         calendarData =
           envelope?.calendarData &&
           typeof envelope.calendarData === "object" &&
@@ -1357,7 +1369,7 @@
       function persistLocalState(envelope) {
         try {
           const normalized = createStateEnvelope(
-            mergeSettingsWithDefault(DEFAULT_SETTINGS, envelope?.settings),
+            sanitizeMaterialStartWorkersInSettings(envelope?.settings),
             envelope?.calendarData || {},
             envelope?.updatedAt,
           );
@@ -1393,6 +1405,35 @@
         }
 
         return candidates;
+      }
+
+      function sanitizeMaterialStartWorkersInSettings(rawSettings) {
+        const next = mergeSettingsWithDefault(DEFAULT_SETTINGS, rawSettings);
+        const materialHandler = next.materialHandler;
+        const dayStartWorkers = next.ccrStartWorkers?.day;
+        if (!materialHandler || !dayStartWorkers) return next;
+
+        const findReplacement = (worker) => {
+          if (worker !== materialHandler) return worker;
+
+          const teams = ["conveyor", "robot", "mainEquip"];
+          for (const team of teams) {
+            const members = Array.isArray(next.teams?.[team])
+              ? next.teams[team]
+              : [];
+            if (members.includes(worker)) {
+              return members.find((member) => member !== worker) || "";
+            }
+          }
+
+          return "";
+        };
+
+        ["day1am", "day1pm", "day2am", "day2pm"].forEach((key) => {
+          dayStartWorkers[key] = findReplacement(dayStartWorkers[key]);
+        });
+
+        return next;
       }
 
       function getStateDb() {
@@ -1447,6 +1488,53 @@
         });
       }
 
+      async function saveScheduleFileHandle(handle) {
+        const db = await getStateDb();
+        if (!db || !handle) return;
+
+        await new Promise((resolve) => {
+          const tx = db.transaction(IDB_STORE, "readwrite");
+          tx.objectStore(IDB_STORE).put(handle, IDB_FILE_HANDLE_KEY);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => {
+            console.warn("파일 핸들 저장 실패", tx.error);
+            resolve();
+          };
+        });
+      }
+
+      async function loadScheduleFileHandle() {
+        const db = await getStateDb();
+        if (!db) return null;
+
+        return new Promise((resolve) => {
+          const tx = db.transaction(IDB_STORE, "readonly");
+          const request = tx.objectStore(IDB_STORE).get(IDB_FILE_HANDLE_KEY);
+          request.onsuccess = () => resolve(request.result || null);
+          request.onerror = () => {
+            console.warn("파일 핸들 로드 실패", request.error);
+            resolve(null);
+          };
+        });
+      }
+
+      function supportsFileSystemAccess() {
+        return (
+          typeof window.showSaveFilePicker === "function" &&
+          typeof window.showOpenFilePicker === "function"
+        );
+      }
+
+      async function verifyFilePermission(handle, mode = "readwrite") {
+        if (!handle || !handle.queryPermission || !handle.requestPermission) {
+          return false;
+        }
+
+        const options = { mode };
+        if ((await handle.queryPermission(options)) === "granted") return true;
+        return (await handle.requestPermission(options)) === "granted";
+      }
+
       function getCurrentEnvelope(updatedAt) {
         return createStateEnvelope(settings, calendarData, updatedAt || stateUpdatedAt);
       }
@@ -1486,7 +1574,7 @@
         DEFAULT_SETTINGS,
       );
 
-      let settings = mergeSettingsWithDefault(DEFAULT_SETTINGS, initialEnvelope.settings);
+      let settings = sanitizeMaterialStartWorkersInSettings(initialEnvelope.settings);
       let calendarData =
         initialEnvelope.calendarData &&
         typeof initialEnvelope.calendarData === "object" &&
@@ -1941,6 +2029,17 @@
           return w;
         };
 
+        const findRawTeam = (worker) => {
+          const teams = ["conveyor", "robot", "mainEquip"];
+          for (const team of teams) {
+            const teamWorkers = Array.isArray(settings.teams?.[team])
+              ? settings.teams[team]
+              : [];
+            if (teamWorkers.includes(worker)) return team;
+          }
+          return null;
+        };
+
         // 근무자가 어느 팀인지 찾기
         const findTeam = (worker) => {
           const teams = ["conveyor", "robot", "mainEquip"];
@@ -1948,6 +2047,15 @@
             if (getWorkers(team).includes(worker)) return team;
           }
           return null;
+        };
+
+        const resolveStartWorker = (worker) => {
+          if (shiftType !== "day" || !settings.materialHandler) return worker;
+          if (worker !== settings.materialHandler) return worker;
+
+          const rawTeam = findRawTeam(worker);
+          const replacement = rawTeam ? getWorkers(rawTeam)[0] : "";
+          return replacement || "-";
         };
 
         // 팀 페어링: AM팀 -> PM팀
@@ -2002,8 +2110,8 @@
 
           if (dayNum === 0) {
             // 1일차: 설정에서 지정
-            am = startWorkers.day1am || "-";
-            pm = startWorkers.day1pm || "-";
+            am = resolveStartWorker(startWorkers.day1am || "-");
+            pm = resolveStartWorker(startWorkers.day1pm || "-");
             amTeam = findTeam(am);
             pmTeam = findTeam(pm);
             // AM 팀 인덱스 업데이트 (해당 근무자 다음 순번으로)
@@ -2024,8 +2132,8 @@
             }
           } else if (dayNum === 1) {
             // 2일차: 설정에서 지정
-            am = startWorkers.day2am || "-";
-            pm = startWorkers.day2pm || "-";
+            am = resolveStartWorker(startWorkers.day2am || "-");
+            pm = resolveStartWorker(startWorkers.day2pm || "-");
             amTeam = findTeam(am);
             pmTeam = findTeam(pm);
             // AM 팀 인덱스 업데이트
@@ -2556,6 +2664,7 @@
             </div>
             <div class="settings-section"><h3>💾 데이터 관리</h3>
                 <div class="backup-buttons"><button class="export-btn" onclick="exportData()">📤 내보내기</button><button class="import-btn" onclick="document.getElementById('importFile').click()">📥 가져오기</button></div>
+                <div class="backup-buttons"><button class="file-save-btn" onclick="saveDataToLocalFile()">💽 로컬 파일 저장</button><button class="file-open-btn" onclick="openDataFromLocalFile()">📂 로컬 파일 열기</button></div>
                 <input type="file" id="importFile" hidden accept=".json" onchange="importData(event)">
             </div>
             <button class="save-btn" onclick="saveAllSettings()">설정 저장</button>`;
@@ -2580,18 +2689,51 @@
         showSettings();
       }
 
+      function replaceMaterialStartWorker(worker) {
+        if (!settings.materialHandler || worker !== settings.materialHandler) {
+          return worker;
+        }
+
+        const teams = ["conveyor", "robot", "mainEquip"];
+        for (const team of teams) {
+          const members = Array.isArray(settings.teams?.[team])
+            ? settings.teams[team]
+            : [];
+          if (members.includes(worker)) {
+            return members.find((member) => member !== worker) || "";
+          }
+        }
+
+        return "";
+      }
+
       function saveAllSettings() {
         settings.dayShiftStart = document.getElementById("sDayStart").value;
         settings.nightShiftStart = document.getElementById("sNightStart").value;
         settings.silrerReferenceDate = document.getElementById("sSilrer").value;
         settings.silrerStartTeam = document.getElementById("sSilrerTeam").value;
         settings.materialHandler = document.getElementById("sMaterial").value;
+        ["A", "B", "C", "D", "E"].forEach((t) => {
+          settings.cTeams[t] = [
+            document.getElementById(`ct-${t}-0`).value,
+            document.getElementById(`ct-${t}-1`).value,
+            document.getElementById(`ct-${t}-2`).value,
+          ];
+        });
         settings.ccrStartWorkers = {
           day: {
-            day1am: document.getElementById("swDayAm1").value,
-            day1pm: document.getElementById("swDayPm1").value,
-            day2am: document.getElementById("swDayAm2").value,
-            day2pm: document.getElementById("swDayPm2").value,
+            day1am: replaceMaterialStartWorker(
+              document.getElementById("swDayAm1").value,
+            ),
+            day1pm: replaceMaterialStartWorker(
+              document.getElementById("swDayPm1").value,
+            ),
+            day2am: replaceMaterialStartWorker(
+              document.getElementById("swDayAm2").value,
+            ),
+            day2pm: replaceMaterialStartWorker(
+              document.getElementById("swDayPm2").value,
+            ),
           },
           night: {
             day1am: document.getElementById("swNightAm1").value,
@@ -2600,13 +2742,6 @@
             day2pm: document.getElementById("swNightPm2").value,
           },
         };
-        ["A", "B", "C", "D", "E"].forEach((t) => {
-          settings.cTeams[t] = [
-            document.getElementById(`ct-${t}-0`).value,
-            document.getElementById(`ct-${t}-1`).value,
-            document.getElementById(`ct-${t}-2`).value,
-          ];
-        });
         saveSettings4();
         closeSettings();
         renderCalendar();
@@ -2652,11 +2787,7 @@
       }
 
       function exportData() {
-        const d = {
-          settings,
-          calendarData,
-          exportDate: new Date().toISOString(),
-        };
+        const d = buildPortableScheduleData();
         const b = new Blob([JSON.stringify(d, null, 2)], {
           type: "application/json",
         });
@@ -2665,6 +2796,110 @@
         l.href = URL.createObjectURL(b);
         l.click();
       }
+
+      function buildPortableScheduleData(updatedAt = Date.now()) {
+        const envelope = createStateEnvelope(settings, calendarData, updatedAt);
+        return {
+          format: "ccr-calendar-schedule",
+          version: 2,
+          settings: envelope.settings,
+          calendarData: envelope.calendarData,
+          updatedAt: envelope.updatedAt,
+          exportDate: new Date(envelope.updatedAt).toISOString(),
+        };
+      }
+
+      function applyImportedScheduleData(d) {
+        if (!d || typeof d !== "object") {
+          throw new Error("JSON 형식이 올바르지 않습니다.");
+        }
+
+        if (d.settings) {
+          settings = mergeSettingsWithDefault(DEFAULT_SETTINGS, d.settings);
+        }
+
+        if (
+          d.calendarData &&
+          typeof d.calendarData === "object" &&
+          !Array.isArray(d.calendarData)
+        ) {
+          calendarData = d.calendarData;
+        }
+
+        window.settings = settings;
+        window.calendarData = calendarData;
+        stateUpdatedAt = Number(d.updatedAt) || Date.now();
+        persistState({ syncServer: true, showServerAlert: false });
+        renderCalendar();
+      }
+
+      async function saveDataToLocalFile() {
+        if (!supportsFileSystemAccess()) {
+          alert("이 브라우저는 로컬 파일 직접 저장을 지원하지 않습니다. 내보내기 버튼으로 JSON 파일을 저장하세요.");
+          exportData();
+          return;
+        }
+
+        try {
+          if (
+            !scheduleFileHandle ||
+            !(await verifyFilePermission(scheduleFileHandle, "readwrite"))
+          ) {
+            scheduleFileHandle = await window.showSaveFilePicker({
+              suggestedName: "ccr-schedule.json",
+              types: [
+                {
+                  description: "CCR Schedule JSON",
+                  accept: { "application/json": [".json"] },
+                },
+              ],
+            });
+            await saveScheduleFileHandle(scheduleFileHandle);
+          }
+
+          const writable = await scheduleFileHandle.createWritable();
+          await writable.write(JSON.stringify(buildPortableScheduleData(), null, 2));
+          await writable.close();
+          alert("로컬 파일에 저장했습니다.");
+        } catch (e) {
+          if (e.name === "AbortError") return;
+          console.error("로컬 파일 저장 실패", e);
+          alert("로컬 파일 저장 실패: " + e.message);
+        }
+      }
+
+      async function openDataFromLocalFile() {
+        if (!supportsFileSystemAccess()) {
+          alert("이 브라우저는 로컬 파일 직접 열기를 지원하지 않습니다. 가져오기 버튼으로 JSON 파일을 선택하세요.");
+          document.getElementById("importFile").click();
+          return;
+        }
+
+        try {
+          const [handle] = await window.showOpenFilePicker({
+            multiple: false,
+            types: [
+              {
+                description: "CCR Schedule JSON",
+                accept: { "application/json": [".json"] },
+              },
+            ],
+          });
+          if (!handle) return;
+
+          const file = await handle.getFile();
+          const d = JSON.parse(await file.text());
+          applyImportedScheduleData(d);
+          scheduleFileHandle = handle;
+          await saveScheduleFileHandle(handle);
+          alert("로컬 파일에서 데이터를 가져왔습니다.");
+        } catch (e) {
+          if (e.name === "AbortError") return;
+          console.error("로컬 파일 열기 실패", e);
+          alert("로컬 파일 열기 실패: " + e.message);
+        }
+      }
+
       function importData(e) {
         const f = e.target.files[0];
         if (!f) return;
@@ -2672,19 +2907,7 @@
         r.onload = (ev) => {
           try {
             const d = JSON.parse(ev.target.result);
-            if (d.settings)
-              settings = mergeSettingsWithDefault(DEFAULT_SETTINGS, d.settings);
-            if (
-              d.calendarData &&
-              typeof d.calendarData === "object" &&
-              !Array.isArray(d.calendarData)
-            )
-              calendarData = d.calendarData;
-            window.settings = settings;
-            window.calendarData = calendarData;
-            stateUpdatedAt = Date.now();
-            persistState({ syncServer: true, showServerAlert: false });
-            renderCalendar();
+            applyImportedScheduleData(d);
             alert("데이터를 가져왔습니다.");
           } catch {
             alert("파일 오류");
@@ -2721,6 +2944,8 @@
         setMonthAndRender,
         exportData,
         importData,
+        saveDataToLocalFile,
+        openDataFromLocalFile,
       });
 
       async function requestPersistentBrowserStorage() {
@@ -2743,6 +2968,7 @@
 
         renderCalendar();
         await hydrateStateFromIndexedDB();
+        scheduleFileHandle = await loadScheduleFileHandle();
         requestPersistentBrowserStorage();
 
         // Supabase 초기화 후 서버에서 최신 데이터 로드
